@@ -141,8 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               background: Colors.white,
                               borderColor: border,
                               onTap: () {
-                                // TODO: navegación futura a listado por PlaceType
-                                // y aquí luego definimos qué hará el "+" en esa vista.
+                                _openGenericPlacetypeList(pt);
                               },
                             );
                           },
@@ -197,6 +196,31 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('No se pudo abrir Restaurantes: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openGenericPlacetypeList(PlaceType placeType) async {
+    try {
+      if (!context.mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PlacesListScreen(
+            placeTypeId: placeType.id,
+            title: placeType.name,
+            ordering: '-avg_rating',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo abrir ${placeType.name}: $e'),
         ),
       );
     }
