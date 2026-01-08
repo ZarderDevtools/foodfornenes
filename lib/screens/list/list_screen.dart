@@ -435,9 +435,11 @@ class _ListCard<T> extends StatelessWidget {
     ].join(' · ');
 
     final rating = getRatingAvg(item);
-    final ratingText = (rating == null) ? '--' : rating.toStringAsFixed(1);
+    final hasRating = rating != null;
+    final ratingText = hasRating ? rating!.toStringAsFixed(1) : '';
 
     final price = (getPriceLevel(item) ?? '').trim();
+    final hasPrice = price.isNotEmpty;
 
     return Material(
       color: Theme.of(context).cardColor,
@@ -485,25 +487,29 @@ class _ListCard<T> extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.star_rounded, size: 18),
-                      const SizedBox(width: 4),
-                      Text(
-                        ratingText,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    price,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).textTheme.bodySmall?.color,
+                  if (hasRating)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star_rounded, size: 18),
+                        const SizedBox(width: 4),
+                        Text(
+                          ratingText,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
-                  ),
+
+                  if (hasRating && hasPrice) const SizedBox(height: 6),
+
+                  if (hasPrice)
+                    Text(
+                      price,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
+                    ),
                 ],
               ),
             ],
