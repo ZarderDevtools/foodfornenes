@@ -1,3 +1,5 @@
+// lib/widgets/bottom_action_bar.dart
+
 import 'package:flutter/material.dart';
 
 /// Barra inferior reutilizable (Sección 3)

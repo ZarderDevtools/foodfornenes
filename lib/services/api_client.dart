@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/api_config.dart';
+import 'dart:async';
 
 /// Excepción genérica de la API.
 /// La usaremos para propagar errores controlados a la UI.
@@ -24,6 +25,7 @@ class ApiException implements Exception {
 
 class ApiClient {
   final Dio _dio;
+  late final Dio _refreshDio;
   final FlutterSecureStorage _storage;
 
   // Claves donde guardaremos los tokens en el móvil
@@ -31,6 +33,8 @@ class ApiClient {
   static const _kRefreshTokenKey = 'refresh_token';
 
   String? _accessToken; // cache en memoria
+  bool _isRefreshing = false;
+  final List<void Function(String newAccess)> _refreshQueue = [];
 
   ApiClient._internal(this._dio, this._storage);
 
@@ -52,6 +56,17 @@ class ApiClient {
 
     final client = ApiClient._internal(dio, storage);
 
+    client._refreshDio = Dio(BaseOptions(
+      baseUrl: dio.options.baseUrl,
+      connectTimeout: dio.options.connectTimeout,
+      receiveTimeout: dio.options.receiveTimeout,
+      sendTimeout: dio.options.sendTimeout,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    ));
+
     // Cargar token guardado (si lo hay)
     await client._loadStoredToken();
 
@@ -64,9 +79,69 @@ class ApiClient {
           }
           handler.next(options);
         },
-        onError: (DioException e, handler) {
+        onError: (DioException e, handler) async {
           // Aquí podríamos hacer lógica de refresh token en el futuro
-          handler.next(e);
+          final status = e.response?.statusCode;
+          final data = e.response?.data;
+
+          final isTokenNotValid =
+              status == 401 && data is Map && data['code'] == 'token_not_valid';
+
+          final alreadyRetried = e.requestOptions.extra['retried'] == true;
+
+          // Si no es expiración de token, o ya reintentamos, seguimos normal
+          if (!isTokenNotValid || alreadyRetried) {
+            return handler.next(e);
+          }
+
+          // Si no hay refresh token, no podemos refrescar
+          final refresh = await client.getRefreshToken();
+          if (refresh == null || refresh.isEmpty) {
+            return handler.next(e);
+          }
+
+          try {
+            final completer = Completer<Response<dynamic>>();
+
+            // Encolamos esta request para reintentarlo cuando tengamos token nuevo
+            client._refreshQueue.add((newAccess) async {
+              final opts = e.requestOptions;
+              opts.extra['retried'] = true;
+              opts.headers['Authorization'] = 'Bearer $newAccess';
+
+              final response = await dio.fetch(opts);
+              completer.complete(response);
+            });
+
+            // Solo la primera request lanza el refresh real
+            if (!client._isRefreshing) {
+              client._isRefreshing = true;
+
+              await client.refreshAccessToken(); // usa _refreshDio y guarda el nuevo access
+
+              final newAccess = await client.getAccessToken();
+              if (newAccess == null || newAccess.isEmpty) {
+                throw Exception('Refresh OK pero no hay access guardado');
+              }
+
+              // Ejecuta todas las requests pendientes
+              final queued = List.of(client._refreshQueue);
+              client._refreshQueue.clear();
+              for (final fn in queued) {
+                fn(newAccess);
+              }
+
+              client._isRefreshing = false;
+            }
+
+            final response = await completer.future;
+            return handler.resolve(response);
+          } catch (_) {
+            client._isRefreshing = false;
+            client._refreshQueue.clear();
+            await client.clearTokens();
+            return handler.next(e);
+          }
         },
       ),
     );
@@ -90,6 +165,8 @@ class ApiClient {
     if (refresh != null) {
       await _storage.write(key: _kRefreshTokenKey, value: refresh);
     }
+    
+    final storedRefresh = await _storage.read(key: _kRefreshTokenKey);
   }
 
   /// Borra tokens (logout).
@@ -174,6 +251,33 @@ class ApiClient {
     }
   }
 
+  Future<void> refreshAccessToken() async {
+    final refresh = await getRefreshToken();
+    if (refresh == null || refresh.isEmpty) {
+      throw ApiException(statusCode: 401, message: 'No hay refresh token guardado.');
+    }
+
+    final res = await _refreshDio.post(
+      '/api/v1/auth/jwt/refresh/',
+      data: {'refresh': refresh},
+    );
+
+    final data = res.data;
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Respuesta inesperada en refresh: $data');
+    }
+
+    final newAccess = data['access'] as String?;
+    final newRefresh = data['refresh'] as String?; // por si el backend rota refresh
+
+    if (newAccess == null || newAccess.isEmpty) {
+      throw Exception('Refresh sin access: $data');
+    }
+
+    await saveTokens(access: newAccess, refresh: newRefresh);
+  }
+
+
   // --------------------
   // Manejo de errores Dio -> ApiException
   // --------------------
@@ -181,14 +285,6 @@ class ApiClient {
     final statusCode = e.response?.statusCode;
     final data = e.response?.data;
 
-    // 👇 DEBUG TEMPORAL (para saber qué pasa)
-    print('--- DIO ERROR ---');
-    print('type: ${e.type}');
-    print('url: ${e.requestOptions.uri}');
-    print('status: $statusCode');
-    print('data: $data');
-    print('message: ${e.message}');
-    print('---------------');
 
     String message;
 

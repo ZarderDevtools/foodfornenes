@@ -1,19 +1,26 @@
-// lib/features/places/domain/place_list_query.dart
+// lib/models/place_list_query.dart
 
 class PlaceListQuery {
   final String? placeTypeId; // place_type (UUID)
-  final String? areaId;      // area (UUID)
-  final String? priceRange;  // "€", "€€", ...
+  final String? areaId; // area (UUID)
+
+  /// Filtro legacy (un único valor): "€", "€€", ...
+  final String? priceRange; // price_range
+
+  /// Nuevo: filtro multi-valor. Ej: ["€", "€€"] -> price_range_in=€,€€
+  final List<String>? priceRangeIn; // price_range_in
+
   final double? minAvgRating;
   final double? maxAvgPricePp;
   final String? search;
-  final String? ordering;    // e.g. "name" o "-avg_rating"
+  final String? ordering; // e.g. "name" o "-avg_rating"
   final int page;
 
   const PlaceListQuery({
     this.placeTypeId,
     this.areaId,
     this.priceRange,
+    this.priceRangeIn,
     this.minAvgRating,
     this.maxAvgPricePp,
     this.search,
@@ -21,24 +28,29 @@ class PlaceListQuery {
     this.page = 1,
   });
 
+  // Sentinel para diferenciar "no tocar" vs "poner null"
+  static const Object _unset = Object();
+
   PlaceListQuery copyWith({
-    String? placeTypeId,
-    String? areaId,
-    String? priceRange,
-    double? minAvgRating,
-    double? maxAvgPricePp,
-    String? search,
-    String? ordering,
+    Object? placeTypeId = _unset,
+    Object? areaId = _unset,
+    Object? priceRange = _unset,
+    Object? priceRangeIn = _unset,
+    Object? minAvgRating = _unset,
+    Object? maxAvgPricePp = _unset,
+    Object? search = _unset,
+    Object? ordering = _unset,
     int? page,
   }) {
     return PlaceListQuery(
-      placeTypeId: placeTypeId ?? this.placeTypeId,
-      areaId: areaId ?? this.areaId,
-      priceRange: priceRange ?? this.priceRange,
-      minAvgRating: minAvgRating ?? this.minAvgRating,
-      maxAvgPricePp: maxAvgPricePp ?? this.maxAvgPricePp,
-      search: search ?? this.search,
-      ordering: ordering ?? this.ordering,
+      placeTypeId: identical(placeTypeId, _unset) ? this.placeTypeId : placeTypeId as String?,
+      areaId: identical(areaId, _unset) ? this.areaId : areaId as String?,
+      priceRange: identical(priceRange, _unset) ? this.priceRange : priceRange as String?,
+      priceRangeIn: identical(priceRangeIn, _unset) ? this.priceRangeIn : priceRangeIn as List<String>?,
+      minAvgRating: identical(minAvgRating, _unset) ? this.minAvgRating : minAvgRating as double?,
+      maxAvgPricePp: identical(maxAvgPricePp, _unset) ? this.maxAvgPricePp : maxAvgPricePp as double?,
+      search: identical(search, _unset) ? this.search : search as String?,
+      ordering: identical(ordering, _unset) ? this.ordering : ordering as String?,
       page: page ?? this.page,
     );
   }
@@ -52,9 +64,20 @@ class PlaceListQuery {
     if (areaId != null && areaId!.isNotEmpty) {
       m["area"] = areaId!;
     }
-    if (priceRange != null && priceRange!.isNotEmpty) {
+
+    // Nuevo: multi-€ (tiene prioridad sobre priceRange)
+    final cleanedPriceRangeIn = (priceRangeIn ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    if (cleanedPriceRangeIn.isNotEmpty) {
+      m["price_range_in"] = cleanedPriceRangeIn.join(",");
+    } else if (priceRange != null && priceRange!.isNotEmpty) {
+      // Legacy: un solo valor
       m["price_range"] = priceRange!;
     }
+
     if (minAvgRating != null) {
       m["min_avg_rating"] = minAvgRating!.toString();
     }

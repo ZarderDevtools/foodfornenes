@@ -1,3 +1,5 @@
+// screens/home/home_screen.dart
+
 import 'package:flutter/material.dart';
 
 import '../../services/api_client.dart';
@@ -9,6 +11,9 @@ import '../../models/bottom_action.dart';
 import '../../widgets/bottom_bar.dart';
 import '../foods/foods_list_screen.dart';
 import '../places/places_list_screen.dart';
+
+// ✅ NUEVO: añadir visita (flow)
+import '../visits/add_visit/add_visit_flow.dart';
 
 class HomeScreen extends StatefulWidget {
   static const routeName = '/home';
@@ -157,9 +162,19 @@ class _HomeScreenState extends State<HomeScreen> {
               left: BottomAction.home(),
               center: BottomAction.primary(
                 icon: Icons.add,
-                // AQUI indicar pantalla de nueva visita
-                // Por ahora, lo dejamos apuntando a Home para validar que funciona:
-                onTap: (ctx) => Navigator.of(ctx).pushNamed(HomeScreen.routeName),
+                // ✅ NUEVO: pantalla de nueva visita
+                onTap: (ctx) async {
+                  final created = await Navigator.of(ctx).push<bool>(
+                    MaterialPageRoute(builder: (_) => const AddVisitFlow()),
+                  );
+
+                  // Opcional: feedback rápido si se creó
+                  if (created == true && ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Visita creada')),
+                    );
+                  }
+                },
               ),
               right: BottomAction.back(),
             ),
@@ -248,7 +263,6 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
-
 }
 
 // -------------------- Widgets UI reutilizables (solo Home por ahora) --------------------

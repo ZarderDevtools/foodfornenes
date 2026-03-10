@@ -7,7 +7,12 @@ import '../../models/place_list_query.dart';
 import '../../repositories/places_repository.dart';
 import '../../services/api_client.dart';
 import '../../services/places_service.dart';
+import '../filters/filter_definition.dart';
+import '../filters/filter_screen.dart';
 import '../list/list_screen.dart';
+import '../places/add_place/add_place_flow.dart';
+import "../sort/sort_definition.dart";
+import "../sort/sort_screen.dart";
 
 class PlacesListScreen extends StatefulWidget {
   /// UUID del PlaceType base (ej: restaurante).
@@ -68,6 +73,154 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
     }
   }
 
+  bool get _hasActiveFilters {
+    final hasSearch = _query.search != null && _query.search!.trim().isNotEmpty;
+    final hasPrices = _query.priceRangeIn != null && _query.priceRangeIn!.isNotEmpty;
+    final hasMinRating = _query.minAvgRating != null;
+    final hasMaxPrice = _query.maxAvgPricePp != null;
+
+    // placeTypeId y ordering NO cuentan como "filtro activo" visual
+    // porque son parte del contexto del listado.
+    return hasSearch || hasPrices || hasMinRating || hasMaxPrice;
+  }
+
+  Future<void> _openFilters() async {
+    // Opciones hardcodeadas (según tu backend)
+    const priceOptions = <FilterOption>[
+      FilterOption(value: "€", label: "€"),
+      FilterOption(value: "€€", label: "€€"),
+      FilterOption(value: "€€€", label: "€€€"),
+      FilterOption(value: "€€€€", label: "€€€€"),
+      FilterOption(value: "€€€€€", label: "€€€€€"),
+    ];
+
+    final filters = <FilterDefinition<PlaceListQuery>>[
+      // 1) Search
+      FilterDefinition<PlaceListQuery>(
+        id: 'search',
+        label: 'Nombre',
+        type: FilterType.text,
+        getValue: (q) => q.search,
+        setValue: (q, v) {
+          final text = (v as String?)?.trim();
+          return q.copyWith(search: (text != null && text.isNotEmpty) ? text : null);
+        },
+      ),
+
+      // 2) Multi-€
+      FilterDefinition<PlaceListQuery>(
+        id: 'price_range_in',
+        label: 'Precio',
+        type: FilterType.multiSelect,
+        options: priceOptions,
+        getValue: (q) => q.priceRangeIn ?? const <String>[],
+        setValue: (q, v) {
+          final list = (v is List<String>) ? v : const <String>[];
+          final cleaned = list.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+          return q.copyWith(priceRangeIn: cleaned);
+        },
+      ),
+
+      // 3) Min avg rating
+      FilterDefinition<PlaceListQuery>(
+        id: 'min_avg_rating',
+        label: 'Rating mínimo',
+        type: FilterType.number,
+        getValue: (q) => q.minAvgRating,
+        setValue: (q, v) {
+          final numVal = v is num ? v.toDouble() : null;
+          return q.copyWith(minAvgRating: numVal);
+        },
+      ),
+
+      // 4) Max avg price pp
+      FilterDefinition<PlaceListQuery>(
+        id: 'max_avg_price_pp',
+        label: 'Precio máximo',
+        type: FilterType.number,
+        getValue: (q) => q.maxAvgPricePp,
+        setValue: (q, v) {
+          final numVal = v is num ? v.toDouble() : null;
+          return q.copyWith(maxAvgPricePp: numVal);
+        },
+      ),
+    ];
+
+    final result = await Navigator.of(context).push<PlaceListQuery>(
+      MaterialPageRoute(
+        builder: (_) => FilterScreen<PlaceListQuery>(
+          title: 'Filtros',
+          initialValue: _query,
+          filters: filters,
+        ),
+      ),
+    );
+
+    if (result == null) return;
+
+    setState(() {
+      _query = result.copyWith(page: 1);
+    });
+  }
+
+  Future<void> _openSort() async {
+    final result = await Navigator.push<SortResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SortScreen(
+          title: "Ordenar sitios",
+          initialOrdering: _query.ordering,
+          options: const [
+            SortDefinition(label: "Nombre", field: "name", humanStringSort: true),
+            SortDefinition(label: "Última visita", field: "last_visit_at"),
+            SortDefinition(label: "Nota media", field: "avg_rating"),
+            SortDefinition(label: "Precio medio por persona", field: "avg_price_pp"),
+          ],
+        ),
+      ),
+    );
+
+    if (result == null) return;
+    if (!result.applied) return;
+
+    setState(() {
+      _query = _query.copyWith(ordering: result.ordering);
+    });
+    final service = _service;
+    if (service == null) return;
+    await service.loadFirstPage(_query);
+  }
+
+  Future<void> _openAddPlace() async {
+    final created = await Navigator.of(context).push<Place>(
+      MaterialPageRoute(
+        builder: (_) => AddPlaceFlow(
+          // ✅ dejamos preseleccionado el tipo del listado actual
+          defaultPlaceTypeId: widget.placeTypeId,
+          defaultPlaceTypeLabel: widget.title,
+        ),
+      ),
+    );
+
+    if (created == null) return;
+
+    // ✅ recargar listado para que aparezca el nuevo sitio
+    final service = _service;
+    if (service == null) return;
+
+    setState(() {
+      _query = _query.copyWith(page: 1);
+    });
+
+    await service.loadFirstPage(_query);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Sitio creado: ${created.name}')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
@@ -122,25 +275,29 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
     return ListScreen<Place>(
       title: widget.title,
 
-      // ✅ Modo paginado (scroll infinito):
       fetchFirstPage: () => service.loadFirstPage(_query),
       fetchNextPage: () => service.loadNextPage(),
       hasNextPage: () => service.hasNext,
 
-      // ✅ Getters:
       getName: (p) => p.name,
       getTags: (p) => p.tags,
       getRatingAvg: (p) => p.avgRating,
       getPriceLevel: (p) => p.priceRange,
 
-      // ✅ Acciones (de momento básicas):
       onTapItem: (p) {},
-      onCreate: () {},
+      // ✅ Botón central: añadir sitio
+      onCreate: _openAddPlace,
+
       onHome: () => Navigator.popUntil(context, (route) => route.isFirst),
       onBack: () => Navigator.pop(context),
 
-      onFilters: null,
-      onSort: null,
+      onFilters: _openFilters,
+      onSort: _openSort,
+
+      // pinta botón filtros "activo"
+      hasActiveFilters: _hasActiveFilters,
+      // pinta botón ordenar "activo"
+      hasActiveSort: (_query.ordering ?? "").trim().isNotEmpty,
 
       emptyMessageOverride: 'No existen ${widget.title.toLowerCase()} actualmente',
     );

@@ -1,3 +1,5 @@
+// lib/screens/list/list_screen.dart
+
 import 'package:flutter/material.dart';
 
 import '../../config/network/paged_result.dart';
@@ -35,6 +37,8 @@ class ListScreen<T> extends StatefulWidget {
     this.emptyMessageOverride,
     this.onFilters, // (por ahora opcional)
     this.onSort, // (por ahora opcional)
+    this.hasActiveFilters = false,
+    this.hasActiveSort = false,
   }) : assert(
           fetchItems != null ||
               (fetchFirstPage != null && fetchNextPage != null && hasNextPage != null),
@@ -67,6 +71,8 @@ class ListScreen<T> extends StatefulWidget {
   // Opcionales (para más adelante)
   final VoidCallback? onFilters;
   final VoidCallback? onSort;
+  final bool hasActiveFilters;
+  final bool hasActiveSort;
 
   // Mensaje vacío
   final String? emptyMessageOverride;
@@ -76,6 +82,7 @@ class ListScreen<T> extends StatefulWidget {
 }
 
 class _ListScreenState<T> extends State<ListScreen<T>> {
+  final ScrollController _scrollController = ScrollController();
   bool _loading = true;
   bool _loadingMore = false;
 
@@ -92,6 +99,38 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
   void initState() {
     super.initState();
     _load(initial: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant ListScreen<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final fetchChanged =
+        oldWidget.fetchItems != widget.fetchItems ||
+        oldWidget.fetchFirstPage != widget.fetchFirstPage;
+
+    if (fetchChanged) {
+      // 1) Sube arriba (en el siguiente frame para evitar errores si aún no hay posiciones)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+
+      // 2) Recarga
+      _load(initial: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _load({bool initial = false}) async {
@@ -208,10 +247,13 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
             visible: _showBottomTools,
             onFilters: widget.onFilters,
             onSort: widget.onSort,
+            filtersActive: widget.hasActiveFilters,
+            sortActive: widget.hasActiveSort,
           ),
         ],
       ),
       bottomNavigationBar: BottomBar3Slots(
+        floating: false,
         left: BottomAction.home(),
         center: BottomAction.primary(
           icon: Icons.add,
@@ -298,6 +340,7 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
           return false;
         },
         child: ListView.separated(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           itemCount: _items.length + 1, // +1 para footer (loader final)
@@ -334,17 +377,37 @@ class _BottomToolsBar extends StatelessWidget {
   final VoidCallback? onFilters;
   final VoidCallback? onSort;
 
+  final bool filtersActive;
+  final bool sortActive;
+
   const _BottomToolsBar({
     required this.visible,
     required this.onFilters,
     required this.onSort,
+    required this.filtersActive,
+    required this.sortActive,
   });
 
   @override
   Widget build(BuildContext context) {
-    // “Encaja” con tu estilo: fondo claro (bg) + borde verde-agua suave
     const bg = Color(0xFFF6FBFF);
     const border = Color(0xFFBFE6E3);
+    const accent = Color(0xFF2BB7A9);
+
+    final filtersButtonStyle = OutlinedButton.styleFrom(
+      backgroundColor: filtersActive ? accent.withOpacity(0.12) : Colors.white,
+      side: BorderSide(color: filtersActive ? accent : border, width: 1.2),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+    );
+    final sortButtonStyle = OutlinedButton.styleFrom(
+      backgroundColor: sortActive ? accent.withOpacity(0.12) : Colors.white,
+      side: BorderSide(color: sortActive ? accent : border, width: 1.2),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+    );
 
     final child = Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -353,30 +416,40 @@ class _BottomToolsBar extends StatelessWidget {
           Expanded(
             child: OutlinedButton.icon(
               onPressed: onFilters,
-              icon: const Icon(Icons.tune_rounded),
-              label: const Text('Filtros'),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: Colors.white,
-                side: const BorderSide(color: border, width: 1.2),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+              icon: Icon(
+                Icons.tune_rounded,
+                color: filtersActive ? accent : null,
               ),
+              label: Text(
+                'Filtros',
+                style: filtersActive
+                    ? const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      )
+                    : null,
+              ),
+              style: filtersButtonStyle,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: OutlinedButton.icon(
               onPressed: onSort,
-              icon: const Icon(Icons.sort_rounded),
-              label: const Text('Ordenar'),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: Colors.white,
-                side: const BorderSide(color: border, width: 1.2),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+              icon: Icon(
+                Icons.sort_rounded,
+                color: sortActive ? accent : null,
               ),
+              label: Text(
+                'Ordenar',
+                style: sortActive
+                    ? const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      )
+                    : null,
+              ),
+              style: sortButtonStyle,
             ),
           ),
         ],

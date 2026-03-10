@@ -1,17 +1,24 @@
 // lib/widgets/bottom_bar.dart
+
 import 'package:flutter/material.dart';
 import '../models/bottom_action.dart';
 
-/// Barra inferior flotante con 3 slots fijos: izquierda, centro, derecha.
+/// Barra inferior con 3 slots fijos: izquierda, centro, derecha.
 /// - Cada slot puede ser null -> no se renderiza nada en ese hueco.
 /// - Los otros NO se recolocan.
-/// - Estética heredada de tu BottomActionBar antiguo (pill flotante + botones circulares).
+/// - Estética heredada de tu BottomActionBar antiguo (pill + botones circulares).
 ///
-/// USO: colócala dentro de un Stack (devuelve Positioned).
+/// Modos:
+/// - floating=true  -> devuelve Positioned (para usar dentro de un Stack).
+/// - floating=false -> devuelve un widget normal (para usar como bottomNavigationBar).
 class BottomBar3Slots extends StatelessWidget {
   final BottomAction? left;
   final BottomAction? center;
   final BottomAction? right;
+
+  /// NUEVO: si true, se pinta flotante (Positioned) dentro de un Stack.
+  /// Si false, se pinta como barra normal (ideal para Scaffold.bottomNavigationBar).
+  final bool floating;
 
   /// Permite invertir el orden de los laterales (por si algún día lo necesitas).
   final bool invertSideButtons;
@@ -27,7 +34,7 @@ class BottomBar3Slots extends StatelessWidget {
   final double bigButtonSize;
   final double sideButtonSize;
 
-  /// Posicionamiento flotante (defaults = tu BottomActionBar antiguo)
+  /// Posicionamiento flotante (solo si floating=true)
   final double horizontalInset; // left/right
   final double bottomInset; // separación sobre el safe area inferior
 
@@ -36,6 +43,7 @@ class BottomBar3Slots extends StatelessWidget {
     this.left,
     this.center,
     this.right,
+    this.floating = true,
     this.invertSideButtons = false,
     this.backgroundColor = Colors.white,
     this.borderColor = const Color(0xFFBFE6E3),
@@ -55,65 +63,125 @@ class BottomBar3Slots extends StatelessWidget {
     final leftAction = invertSideButtons ? right : left;
     final rightAction = invertSideButtons ? left : right;
 
+    final bar = _BarShell(
+      leftAction: leftAction,
+      centerAction: center,
+      rightAction: rightAction,
+      backgroundColor: backgroundColor,
+      borderColor: borderColor,
+      accentColor: accentColor,
+      iconColor: iconColor,
+      height: height,
+      bigButtonSize: bigButtonSize,
+      sideButtonSize: sideButtonSize,
+    );
+
+    if (!floating) {
+      // Modo bottomNavigationBar: respetamos safe area desde aquí.
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: horizontalInset,
+            right: horizontalInset,
+            bottom: bottomInset + safeBottom,
+            top: 0,
+          ),
+          child: bar,
+        ),
+      );
+    }
+
+    // Modo flotante: Positioned dentro de un Stack.
     return Positioned(
       left: horizontalInset,
       right: horizontalInset,
       bottom: bottomInset + safeBottom,
-      child: Container(
-        height: height,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: backgroundColor.withOpacity(0.95),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: borderColor, width: 1.1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.07),
-              blurRadius: 14,
-              offset: const Offset(0, 10),
-            )
-          ],
-        ),
-        child: Row(
-          // 3 slots fijos y siempre presentes (aunque estén vacíos)
-          children: [
-            Expanded(
-              child: _Slot(
-                action: leftAction,
-                alignment: Alignment.centerLeft,
-                size: sideButtonSize,
-                background: Colors.white,
-                borderColor: borderColor,
-                iconColor: accentColor,
-                // Los laterales no son "primary" visualmente en tu diseño
-                forceVariant: BottomActionVariant.normal,
-              ),
+      child: bar,
+    );
+  }
+}
+
+class _BarShell extends StatelessWidget {
+  final BottomAction? leftAction;
+  final BottomAction? centerAction;
+  final BottomAction? rightAction;
+
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color accentColor;
+  final Color iconColor;
+
+  final double height;
+  final double bigButtonSize;
+  final double sideButtonSize;
+
+  const _BarShell({
+    required this.leftAction,
+    required this.centerAction,
+    required this.rightAction,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.accentColor,
+    required this.iconColor,
+    required this.height,
+    required this.bigButtonSize,
+    required this.sideButtonSize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: backgroundColor.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: borderColor, width: 1.1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 14,
+            offset: const Offset(0, 10),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _Slot(
+              action: leftAction,
+              alignment: Alignment.centerLeft,
+              size: sideButtonSize,
+              background: Colors.white,
+              borderColor: borderColor,
+              iconColor: accentColor,
+              forceVariant: BottomActionVariant.normal,
             ),
-            Expanded(
-              child: _Slot(
-                action: center,
-                alignment: Alignment.center,
-                size: bigButtonSize,
-                // Centro = botón grande con accentColor (como el "+")
-                background: accentColor,
-                borderColor: Colors.transparent,
-                iconColor: iconColor,
-                forceVariant: BottomActionVariant.primary,
-              ),
+          ),
+          Expanded(
+            child: _Slot(
+              action: centerAction,
+              alignment: Alignment.center,
+              size: bigButtonSize,
+              background: accentColor,
+              borderColor: Colors.transparent,
+              iconColor: iconColor,
+              forceVariant: BottomActionVariant.primary,
             ),
-            Expanded(
-              child: _Slot(
-                action: rightAction,
-                alignment: Alignment.centerRight,
-                size: sideButtonSize,
-                background: Colors.white,
-                borderColor: borderColor,
-                iconColor: accentColor,
-                forceVariant: BottomActionVariant.normal,
-              ),
+          ),
+          Expanded(
+            child: _Slot(
+              action: rightAction,
+              alignment: Alignment.centerRight,
+              size: sideButtonSize,
+              background: Colors.white,
+              borderColor: borderColor,
+              iconColor: accentColor,
+              forceVariant: BottomActionVariant.normal,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -128,9 +196,6 @@ class _Slot extends StatelessWidget {
   final Color borderColor;
   final Color iconColor;
 
-  /// Para clavar el look antiguo:
-  /// - laterales siempre estilo "normal"
-  /// - centro siempre estilo "primary"
   final BottomActionVariant forceVariant;
 
   const _Slot({
@@ -146,7 +211,6 @@ class _Slot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (action == null) {
-      // Hueco vacío, sin recolocar el resto
       return const SizedBox.shrink();
     }
 
@@ -214,18 +278,12 @@ class _CircleActionButton extends StatelessWidget {
   }
 
   Widget _buildChild() {
-    // Para clavar el diseño antiguo:
-    // - laterales: icono (home/back) con color accentColor
-    // - centro: normalmente era "+", pero ahora usaremos icono si no hay label
-    //   y si hay label, mostramos label (opcional).
     final hasLabel = (action.label != null && action.label!.trim().isNotEmpty);
 
     if (!hasLabel) {
       return Icon(action.icon, color: iconColor);
     }
 
-    // Si alguna vez quieres label en el botón circular, lo permitimos
-    // (no era lo típico en tu diseño, pero te da flexibilidad).
     return Text(
       action.label!,
       style: TextStyle(

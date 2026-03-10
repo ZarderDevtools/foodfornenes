@@ -1,3 +1,5 @@
+// lib/models/food_list_query.dart
+
 class FoodListQuery {
   final bool? isActive;
   final String? name;
@@ -13,18 +15,21 @@ class FoodListQuery {
     this.page = 1,
   });
 
+  // Sentinel para diferenciar "no tocar" vs "poner null"
+  static const Object _unset = Object();
+
   FoodListQuery copyWith({
-    bool? isActive,
-    String? name,
-    String? search,
-    String? ordering,
+    Object? isActive = _unset,
+    Object? name = _unset,
+    Object? search = _unset,
+    Object? ordering = _unset,
     int? page,
   }) {
     return FoodListQuery(
-      isActive: isActive ?? this.isActive,
-      name: name ?? this.name,
-      search: search ?? this.search,
-      ordering: ordering ?? this.ordering,
+      isActive: identical(isActive, _unset) ? this.isActive : isActive as bool?,
+      name: identical(name, _unset) ? this.name : name as String?,
+      search: identical(search, _unset) ? this.search : search as String?,
+      ordering: identical(ordering, _unset) ? this.ordering : ordering as String?,
       page: page ?? this.page,
     );
   }
