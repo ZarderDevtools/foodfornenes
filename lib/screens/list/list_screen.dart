@@ -234,6 +234,7 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
         title: Text(widget.title),
         centerTitle: true,
         automaticallyImplyLeading: false,
+        backgroundColor: const Color(0xFFF6FBFF),
       ),
       body: Column(
         children: [

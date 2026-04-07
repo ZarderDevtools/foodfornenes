@@ -79,6 +79,7 @@ class AppScaffold extends StatelessWidget {
               title: Text(title!),
               centerTitle: true,
               automaticallyImplyLeading: false,
+              backgroundColor: const Color(0xFFF6FBFF),
             )
           : null,
       body: SafeArea(
