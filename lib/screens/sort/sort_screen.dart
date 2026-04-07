@@ -3,7 +3,7 @@
 import "package:flutter/material.dart";
 
 import "../../models/bottom_action.dart";
-import "../../widgets/bottom_bar.dart";
+import "../../widgets/app_scaffold.dart";
 import "sort_definition.dart";
 
 class SortScreen extends StatefulWidget {
@@ -86,96 +86,88 @@ class _SortScreenState extends State<SortScreen> {
 
     final showClear = (_draftOrdering ?? "").trim().isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6FBFF),
-      appBar: AppBar(
-        title: Text(widget.title),
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-      ),
-      body: ListView.separated(
-        padding: const EdgeInsets.only(top: 8, bottom: 96),
-        itemCount: widget.options.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, index) {
-          final opt = widget.options[index];
-          final state = SortHelpers.stateForField(
-            ordering: _draftOrdering,
-            field: opt.field,
-          );
+    return AppScaffold(
+      title: widget.title,
+      floatingBar: false,
+      left: home,
+      center: apply,
+      right: back,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.only(top: 8, bottom: 96),
+              itemCount: widget.options.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final opt = widget.options[index];
+                final state = SortHelpers.stateForField(
+                  ordering: _draftOrdering,
+                  field: opt.field,
+                );
 
-          final isActive = state != SortState.none;
+                final isActive = state != SortState.none;
 
-          IconData? icon;
-          if (state != SortState.none) {
-            final isHumanString = opt.humanStringSort;
+                IconData? icon;
+                if (state != SortState.none) {
+                  final isHumanString = opt.humanStringSort;
 
-            // Para "name" invertimos el significado visual para que sea humano:
-            // ASC (A→Z) => flecha abajo
-            // DESC (Z→A) => flecha arriba
-            if (isHumanString) {
-              if (state == SortState.asc) icon = Icons.arrow_downward_rounded;
-              if (state == SortState.desc) icon = Icons.arrow_upward_rounded;
-            } else {
-              // Convención normal (técnica):
-              // DESC => flecha abajo, ASC => flecha arriba
-              if (state == SortState.desc) icon = Icons.arrow_downward_rounded;
-              if (state == SortState.asc) icon = Icons.arrow_upward_rounded;
-            }
-          }
+                  // Para "name" invertimos el significado visual para que sea humano:
+                  // ASC (A→Z) => flecha abajo
+                  // DESC (Z→A) => flecha arriba
+                  if (isHumanString) {
+                    if (state == SortState.asc) icon = Icons.arrow_downward_rounded;
+                    if (state == SortState.desc) icon = Icons.arrow_upward_rounded;
+                  } else {
+                    // Convención normal (técnica):
+                    // DESC => flecha abajo, ASC => flecha arriba
+                    if (state == SortState.desc) icon = Icons.arrow_downward_rounded;
+                    if (state == SortState.asc) icon = Icons.arrow_upward_rounded;
+                  }
+                }
 
-          return Material(
-            color: isActive ? cs.surfaceContainerHighest : Colors.transparent,
-            child: ListTile(
-              title: Text(
-                opt.label,
-                style: isActive
-                    ? theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      )
-                    : theme.textTheme.bodyLarge,
-              ),
-              trailing: icon == null
-                  ? null
-                  : Icon(
-                      icon,
-                      color: cs.primary,
+                return Material(
+                  color: isActive ? cs.surfaceContainerHighest : Colors.transparent,
+                  child: ListTile(
+                    title: Text(
+                      opt.label,
+                      style: isActive
+                          ? theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            )
+                          : theme.textTheme.bodyLarge,
                     ),
-              onTap: () => _toggleOption(opt.field),
-            ),
-          );
-        },
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showClear)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: OutlinedButton.icon(
-                  onPressed: _clear,
-                  icon: const Icon(Icons.close_rounded),
-                  label: const Text("Limpiar  "),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: const BorderSide(color: Color(0xFFBFE6E3), width: 1.2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    trailing: icon == null
+                        ? null
+                        : Icon(
+                            icon,
+                            color: cs.primary,
+                          ),
+                    onTap: () => _toggleOption(opt.field),
                   ),
+                );
+              },
+            ),
+          ),
+          if (showClear)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: OutlinedButton.icon(
+                onPressed: _clear,
+                icon: const Icon(Icons.close_rounded),
+                label: const Text("Limpiar  "),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFBFE6E3), width: 1.2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
-            BottomBar3Slots(
-              floating: false,
-              left: home,
-              center: apply,
-              right: back,
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

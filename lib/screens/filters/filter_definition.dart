@@ -3,9 +3,10 @@
 /// Tipos de filtros soportados por la pantalla genérica.
 /// (La UI se implementará después)
 enum FilterType {
-  text,        // TextBox simple
-  multiSelect, // Selección múltiple (ej: €, €€)
-  number,      // Número (ej: rating, precio)
+  text,               // TextBox simple
+  multiSelect,        // Chips: selección múltiple (pocas opciones fijas)
+  multiSelectSearch,  // Campo compacto + bottom sheet con búsqueda (muchas opciones)
+  number,             // Número (ej: rating, precio)
 }
 
 /// Definición genérica de un filtro.

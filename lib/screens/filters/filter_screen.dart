@@ -3,10 +3,11 @@
 import 'package:flutter/material.dart';
 
 import '../../models/bottom_action.dart';
-import '../../widgets/bottom_bar.dart';
+import '../../widgets/app_scaffold.dart';
 import 'filter_definition.dart';
 import 'widgets/filter_multi_select.dart';
 import 'widgets/filter_number_field.dart';
+import 'widgets/filter_searchable_multi_select.dart';
 import 'widgets/filter_text_field.dart';
 
 class FilterScreen<T> extends StatefulWidget {
@@ -51,6 +52,7 @@ class _FilterScreenState<T> extends State<FilterScreen<T>> {
       case FilterType.number:
         return null;
       case FilterType.multiSelect:
+      case FilterType.multiSelectSearch:
         return const <String>[];
     }
   }
@@ -90,6 +92,13 @@ class _FilterScreenState<T> extends State<FilterScreen<T>> {
           onChanged: _setValue,
         );
 
+      case FilterType.multiSelectSearch:
+        return FilterSearchableMultiSelect<T>(
+          definition: def,
+          value: _value,
+          onChanged: _setValue,
+        );
+
       case FilterType.number:
         return FilterNumberField<T>(
           definition: def,
@@ -115,59 +124,49 @@ class _FilterScreenState<T> extends State<FilterScreen<T>> {
 
     final showClearAll = _hasAnyFilterValue();
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6FBFF),
-      appBar: AppBar(
-        title: Text(widget.title),
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final def in widget.filters) ...[
-                _buildFilter(def),
-                const SizedBox(height: 16),
-              ],
-            ],
+    return AppScaffold(
+      title: widget.title,
+      floatingBar: false,
+      left: home,
+      center: apply,
+      right: back,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final def in widget.filters) ...[
+                    _buildFilter(def),
+                    const SizedBox(height: 16),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
 
-      // ✅ Botón “Limpiar todos” fijo encima de la bottom bar
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showClearAll)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: OutlinedButton.icon(
-                  onPressed: _clearAll,
-                  icon: const Icon(Icons.close_rounded),
-                  label: const Text('Limpiar  '),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: const BorderSide(color: Color(0xFFBFE6E3), width: 1.2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+          // Botón "Limpiar todos" fijo encima de la bottom bar
+          if (showClearAll)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: OutlinedButton.icon(
+                onPressed: _clearAll,
+                icon: const Icon(Icons.close_rounded),
+                label: const Text('Limpiar  '),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFBFE6E3), width: 1.2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
-            BottomBar3Slots(
-              floating: false,
-              left: home,
-              center: apply,
-              right: back,
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

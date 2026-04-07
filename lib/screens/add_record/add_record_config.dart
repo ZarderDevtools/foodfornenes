@@ -48,9 +48,13 @@ class AddRecordConfig {
   /// Icono del botón central.
   final IconData submitIcon;
 
-  /// Valores iniciales (útil en futuro para editar o duplicar).
+  /// Valores iniciales (útil para editar o duplicar).
   /// Si no se pasa nada, el formulario parte vacío con defaults de cada FieldSpec.
   final Map<String, Object?>? initialValues;
+
+  /// Widget opcional renderizado encima de los campos del formulario.
+  /// Útil para mostrar información de solo lectura (ej: estadísticas en edición).
+  final Widget? header;
 
   const AddRecordConfig({
     required this.title,
@@ -62,5 +66,6 @@ class AddRecordConfig {
     this.submitLabel = 'Guardar',
     this.submitIcon = Icons.check_rounded,
     this.initialValues,
+    this.header,
   });
 }

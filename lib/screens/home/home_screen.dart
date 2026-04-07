@@ -8,7 +8,7 @@ import '../../repositories/categorization_repository.dart';
 import '../../models/place_type.dart';
 import '../../config/app_images.dart';
 import '../../models/bottom_action.dart';
-import '../../widgets/bottom_bar.dart';
+import '../../widgets/app_scaffold.dart';
 import '../foods/foods_list_screen.dart';
 import '../places/places_list_screen.dart';
 
@@ -45,19 +45,31 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     // Colores base (alineados con login: frescos, verde/azul suaves)
-    final bg = const Color(0xFFF6FBFF);
     final card = Colors.white;
     final border = const Color(0xFFBFE6E3); // verde-agua suave
 
-    return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // ---------------- CONTENIDO PRINCIPAL ----------------
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Column(
+    return AppScaffold(
+      left: BottomAction.home(),
+      center: BottomAction.primary(
+        icon: Icons.add,
+        // ✅ NUEVO: pantalla de nueva visita
+        onTap: (ctx) async {
+          final created = await Navigator.of(ctx).push<bool>(
+            MaterialPageRoute(builder: (_) => const AddVisitFlow()),
+          );
+
+          // Opcional: feedback rápido si se creó
+          if (created == true && ctx.mounted) {
+            ScaffoldMessenger.of(ctx).showSnackBar(
+              const SnackBar(content: Text('Visita creada')),
+            );
+          }
+        },
+      ),
+      right: BottomAction.back(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Column(
                 children: [
                   _SectionTitle(title: ""), // Accesos
                   const SizedBox(height: 10),
@@ -156,31 +168,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-
-            // ---------------- SECCIÓN 3: BARRA INFERIOR (3 slots) ----------------
-            BottomBar3Slots(
-              left: BottomAction.home(),
-              center: BottomAction.primary(
-                icon: Icons.add,
-                // ✅ NUEVO: pantalla de nueva visita
-                onTap: (ctx) async {
-                  final created = await Navigator.of(ctx).push<bool>(
-                    MaterialPageRoute(builder: (_) => const AddVisitFlow()),
-                  );
-
-                  // Opcional: feedback rápido si se creó
-                  if (created == true && ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('Visita creada')),
-                    );
-                  }
-                },
-              ),
-              right: BottomAction.back(),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

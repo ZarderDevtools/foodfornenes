@@ -53,8 +53,8 @@ class RelationFieldWidget extends StatelessWidget {
               ? () async {
                   final selected = await _openSelector(context);
                   if (selected != null) {
-                    final id = spec.getId(selected);
-                    final label = spec.getLabel(selected);
+                    final id = spec.idOf(selected);
+                    final label = spec.labelOf(selected);
 
                     values.setValue(spec.key, id);
                     values.setValue(_labelKey, label);
@@ -81,31 +81,6 @@ class RelationFieldWidget extends StatelessWidget {
             ),
           ),
         ),
-        if (canCreate) ...[
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.add),
-            label: Text(
-              (spec.createLabel != null && spec.createLabel!.trim().isNotEmpty)
-                  ? spec.createLabel!
-                  : 'Añadir ${spec.label}',
-            ),
-            onPressed: enabled
-                ? () async {
-                    final created = await spec.onCreate!(values);
-                    if (created == null) return;
-
-                    final id = spec.getId(created);
-                    final label = spec.getLabel(created);
-
-                    values.setValue(spec.key, id);
-                    values.setValue(_labelKey, label);
-
-                    spec.notifyChanged(id, values);
-                  }
-                : null,
-          ),
-        ],
       ],
     );
   }
@@ -203,6 +178,33 @@ class _RelationSearchModalState extends State<_RelationSearchModal> {
                 onChanged: _load,
               ),
               const SizedBox(height: 12),
+              if (widget.spec.onCreate != null) ...[
+                ListTile(
+                  dense: true,
+                  leading: Icon(
+                    Icons.add_circle_outline,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  title: Text(
+                    (widget.spec.createLabel != null &&
+                            widget.spec.createLabel!.trim().isNotEmpty)
+                        ? widget.spec.createLabel!
+                        : 'Añadir ${widget.spec.label}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  onTap: () async {
+                    final created = await widget.spec.onCreate!(widget.values);
+                    if (created != null && context.mounted) {
+                      Navigator.of(context).pop(created);
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                const SizedBox(height: 4),
+              ],
               if (_loading)
                 const Padding(
                   padding: EdgeInsets.all(16),
@@ -245,7 +247,7 @@ class _RelationSearchModalState extends State<_RelationSearchModal> {
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (_, i) {
                             final item = _items[i];
-                            final label = widget.spec.getLabel(item);
+                            final label = widget.spec.labelOf(item);
 
                             return ListTile(
                               title: Text(label),

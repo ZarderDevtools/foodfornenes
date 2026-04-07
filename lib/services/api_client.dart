@@ -36,6 +36,17 @@ class ApiClient {
   bool _isRefreshing = false;
   final List<void Function(String newAccess)> _refreshQueue = [];
 
+  // Stream para notificar sesión expirada a la capa de UI
+  final _sessionExpiredController = StreamController<void>.broadcast();
+  Stream<void> get onSessionExpired => _sessionExpiredController.stream;
+  bool _isHandlingSessionExpiry = false;
+
+  void _triggerSessionExpiry() {
+    if (_isHandlingSessionExpiry) return;
+    _isHandlingSessionExpiry = true;
+    clearTokens().then((_) => _sessionExpiredController.add(null));
+  }
+
   ApiClient._internal(this._dio, this._storage);
 
   /// Fábrica para crear un ApiClient configurado.
@@ -91,12 +102,14 @@ class ApiClient {
 
           // Si no es expiración de token, o ya reintentamos, seguimos normal
           if (!isTokenNotValid || alreadyRetried) {
+            if (status == 401) client._triggerSessionExpiry();
             return handler.next(e);
           }
 
           // Si no hay refresh token, no podemos refrescar
           final refresh = await client.getRefreshToken();
           if (refresh == null || refresh.isEmpty) {
+            client._triggerSessionExpiry();
             return handler.next(e);
           }
 
@@ -139,7 +152,7 @@ class ApiClient {
           } catch (_) {
             client._isRefreshing = false;
             client._refreshQueue.clear();
-            await client.clearTokens();
+            client._triggerSessionExpiry();
             return handler.next(e);
           }
         },
@@ -159,6 +172,7 @@ class ApiClient {
     required String access,
     String? refresh,
   }) async {
+    _isHandlingSessionExpiry = false; // permite manejar futuros 401 tras re-login
     _accessToken = access;
     await _storage.write(key: _kAccessTokenKey, value: access);
 

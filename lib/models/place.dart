@@ -1,4 +1,6 @@
-// lib/features/places/domain/place.dart
+// lib/models/place.dart
+
+import 'tag.dart';
 
 class Place {
   final String id;
@@ -6,6 +8,7 @@ class Place {
   final String name;
   final String placeTypeId;
   final String? areaId;
+  final String? areaName;
 
   /// "€", "€€", "€€€", ...
   final String priceRange;
@@ -22,9 +25,12 @@ class Place {
   final int visitsCount;
   final DateTime? lastVisitAt;
 
-  /// En tu JSON viene como lista (ahora mismo vacía). Asumimos lista de IDs o strings.
-  /// Si más adelante el backend devuelve objetos de tag, lo adaptamos.
+  /// Tags del place. Cada elemento es el nombre del tag (para display).
   final List<String> tags;
+
+  /// UUIDs de los tags (para pre-popular formularios de edición).
+  /// Solo disponible cuando el endpoint devuelve objetos {id, name}.
+  final List<String> tagIds;
 
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -35,6 +41,7 @@ class Place {
     required this.name,
     required this.placeTypeId,
     required this.areaId,
+    required this.areaName,
     required this.priceRange,
     required this.description,
     required this.url,
@@ -43,6 +50,7 @@ class Place {
     required this.visitsCount,
     required this.lastVisitAt,
     required this.tags,
+    required this.tagIds,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -61,13 +69,29 @@ class Place {
       return null;
     }
 
-    List<String> _toStringList(dynamic v) {
+    List<String> _parseTags(dynamic v) {
       if (v == null) return const [];
-      if (v is List) {
-        // Por ahora: convierte elementos a string (IDs o nombres).
-        return v.map((e) => e.toString()).toList();
-      }
-      return const [];
+      if (v is! List) return const [];
+      return v
+          .map((e) {
+            if (e is Map<String, dynamic>) return Tag.fromJson(e).name;
+            return e.toString();
+          })
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+
+    List<String> _parseTagIds(dynamic v) {
+      if (v == null) return const [];
+      if (v is! List) return const [];
+      return v
+          .map((e) {
+            // Solo extraemos ID si el elemento es un objeto {id, name}
+            if (e is Map<String, dynamic>) return (e['id'] ?? '').toString();
+            return ''; // String plano → no podemos extraer ID
+          })
+          .where((s) => s.isNotEmpty)
+          .toList();
     }
 
     return Place(
@@ -75,7 +99,12 @@ class Place {
       householdId: (json["household"] ?? "").toString(),
       name: (json["name"] ?? "").toString(),
       placeTypeId: (json["place_type"] ?? "").toString(),
-      areaId: json["area"] == null ? null : json["area"].toString(),
+      areaId: json["area"] is Map<String, dynamic>
+          ? (json["area"]["id"] as String?)
+          : (json["area"] == null ? null : json["area"].toString()),
+      areaName: json["area"] is Map<String, dynamic>
+          ? (json["area"]["name"] as String?)
+          : null,
       priceRange: (json["price_range"] ?? "€").toString(),
       description: (json["description"] ?? "").toString(),
       url: (json["url"] ?? "").toString(),
@@ -83,7 +112,8 @@ class Place {
       avgPricePp: _toDouble(json["avg_price_pp"]),
       visitsCount: (json["visits_count"] as num?)?.toInt() ?? 0,
       lastVisitAt: _toDateTime(json["last_visit_at"]),
-      tags: _toStringList(json["tags"]),
+      tags: _parseTags(json["tags"]),
+      tagIds: _parseTagIds(json["tags"]),
       createdAt: DateTime.parse(json["created_at"] as String),
       updatedAt: DateTime.parse(json["updated_at"] as String),
     );

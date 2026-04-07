@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/place.dart';
 import '../../models/place_list_query.dart';
+import '../../repositories/categorization_repository.dart';
 import '../../repositories/places_repository.dart';
 import '../../services/api_client.dart';
 import '../../services/places_service.dart';
@@ -11,6 +12,7 @@ import '../filters/filter_definition.dart';
 import '../filters/filter_screen.dart';
 import '../list/list_screen.dart';
 import '../places/add_place/add_place_flow.dart';
+import '../places/place_detail_screen.dart';
 import "../sort/sort_definition.dart";
 import "../sort/sort_screen.dart";
 
@@ -37,6 +39,7 @@ class PlacesListScreen extends StatefulWidget {
 
 class _PlacesListScreenState extends State<PlacesListScreen> {
   PlacesService? _service;
+  CategorizationRepository? _catRepo;
   late PlaceListQuery _query;
 
   bool _ready = false;
@@ -58,10 +61,12 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
       final api = await ApiClient.create();
       final repo = PlacesRepository(api);
       final service = PlacesService(repo);
+      final catRepo = CategorizationRepository(api);
 
       if (!mounted) return;
       setState(() {
         _service = service;
+        _catRepo = catRepo;
         _ready = true;
       });
     } catch (e) {
@@ -75,24 +80,37 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
 
   bool get _hasActiveFilters {
     final hasSearch = _query.search != null && _query.search!.trim().isNotEmpty;
-    final hasPrices = _query.priceRangeIn != null && _query.priceRangeIn!.isNotEmpty;
     final hasMinRating = _query.minAvgRating != null;
     final hasMaxPrice = _query.maxAvgPricePp != null;
+    final hasTags = _query.tagsIn != null && _query.tagsIn!.isNotEmpty;
+    final hasAreas = _query.areasIn != null && _query.areasIn!.isNotEmpty;
 
     // placeTypeId y ordering NO cuentan como "filtro activo" visual
     // porque son parte del contexto del listado.
-    return hasSearch || hasPrices || hasMinRating || hasMaxPrice;
+    return hasSearch || hasMinRating || hasMaxPrice || hasTags || hasAreas;
   }
 
   Future<void> _openFilters() async {
-    // Opciones hardcodeadas (según tu backend)
-    const priceOptions = <FilterOption>[
-      FilterOption(value: "€", label: "€"),
-      FilterOption(value: "€€", label: "€€"),
-      FilterOption(value: "€€€", label: "€€€"),
-      FilterOption(value: "€€€€", label: "€€€€"),
-      FilterOption(value: "€€€€€", label: "€€€€€"),
-    ];
+    // Cargamos tags y áreas antes de abrir los filtros
+    List<FilterOption> tagOptions = const [];
+    List<FilterOption> areaOptions = const [];
+    final catRepo = _catRepo;
+    if (catRepo != null) {
+      try {
+        final results = await Future.wait([
+          catRepo.listTags(ordering: 'name', page: 1),
+          catRepo.listAreas(ordering: 'name', page: 1),
+        ]);
+        tagOptions = (results[0] as List)
+            .map((t) => FilterOption(value: t.id, label: t.name))
+            .toList();
+        areaOptions = (results[1] as List)
+            .map((a) => FilterOption(value: a.id, label: a.name))
+            .toList();
+      } catch (_) {
+        // Si falla la carga, los filtros dinámicos simplemente no se muestran
+      }
+    }
 
     final filters = <FilterDefinition<PlaceListQuery>>[
       // 1) Search
@@ -107,21 +125,7 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
         },
       ),
 
-      // 2) Multi-€
-      FilterDefinition<PlaceListQuery>(
-        id: 'price_range_in',
-        label: 'Precio',
-        type: FilterType.multiSelect,
-        options: priceOptions,
-        getValue: (q) => q.priceRangeIn ?? const <String>[],
-        setValue: (q, v) {
-          final list = (v is List<String>) ? v : const <String>[];
-          final cleaned = list.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-          return q.copyWith(priceRangeIn: cleaned);
-        },
-      ),
-
-      // 3) Min avg rating
+      // 2) Min avg rating
       FilterDefinition<PlaceListQuery>(
         id: 'min_avg_rating',
         label: 'Rating mínimo',
@@ -144,7 +148,39 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
           return q.copyWith(maxAvgPricePp: numVal);
         },
       ),
+
+      // 5) Tags (multi-select dinámico, solo si hay tags disponibles)
+      if (tagOptions.isNotEmpty)
+        FilterDefinition<PlaceListQuery>(
+          id: 'tags_in',
+          label: 'Etiquetas',
+          type: FilterType.multiSelect,
+          options: tagOptions,
+          getValue: (q) => q.tagsIn ?? const <String>[],
+          setValue: (q, v) {
+            final list = (v is List<String>) ? v : const <String>[];
+            final cleaned = list.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+            return q.copyWith(tagsIn: cleaned.isEmpty ? null : cleaned);
+          },
+        ),
+
+      // 6) Áreas (multi-select con búsqueda, solo si hay áreas disponibles)
+      if (areaOptions.isNotEmpty)
+        FilterDefinition<PlaceListQuery>(
+          id: 'areas_in',
+          label: 'Áreas',
+          type: FilterType.multiSelectSearch,
+          options: areaOptions,
+          getValue: (q) => q.areasIn ?? const <String>[],
+          setValue: (q, v) {
+            final list = (v is List<String>) ? v : const <String>[];
+            final cleaned = list.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+            return q.copyWith(areasIn: cleaned.isEmpty ? null : cleaned);
+          },
+        ),
     ];
+
+    if (!mounted) return;
 
     final result = await Navigator.of(context).push<PlaceListQuery>(
       MaterialPageRoute(
@@ -282,9 +318,19 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
       getName: (p) => p.name,
       getTags: (p) => p.tags,
       getRatingAvg: (p) => p.avgRating,
-      getPriceLevel: (p) => p.priceRange,
+      getPriceLevel: (p) => p.avgPricePp != null ? 'pp: ${p.avgPricePp!.round()}€' : null,
 
-      onTapItem: (p) {},
+      onTapItem: (p) {
+        Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => PlaceDetailScreen(placeId: p.id),
+          ),
+        ).then((wasEdited) {
+          if (wasEdited == true && mounted) {
+            setState(() => _query = _query.copyWith(page: 1));
+          }
+        });
+      },
       // ✅ Botón central: añadir sitio
       onCreate: _openAddPlace,
 

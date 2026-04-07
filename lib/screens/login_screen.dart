@@ -56,12 +56,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       print('LOGIN ERROR: $e');
       if (!mounted) return;
+      final errorMessage = e is ApiException
+          ? e.message
+          : 'Error inesperado: $e';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'No se pudo iniciar sesión. Revisa usuario/contraseña.',
-            style: GoogleFonts.inter(),
-          ),
+          content: Text(errorMessage, style: GoogleFonts.inter()),
         ),
       );
     } finally {

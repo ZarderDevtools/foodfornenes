@@ -67,6 +67,13 @@ class RelationFieldSpec<T> extends FieldSpec {
   /// Por defecto no hace nada.
   String? getLabelForStoredValue(Object storedValue) => null;
 
+  /// Métodos de despacho con firma (dynamic) → String.
+  /// Necesarios para llamarlos desde código no tipado (FieldRenderer / widgets
+  /// que almacenan RelationFieldSpec sin parámetro de tipo), evitando el error
+  /// de contravarianza: '(T) => String' no es subtipo de '(dynamic) => String'.
+  String labelOf(dynamic item) => getLabel(item as T);
+  String idOf(dynamic item) => getId(item as T);
+
   /// Punto único para notificar cambios (evita líos de tipos)
   void notifyChanged(String? selectedId, AddFormValues values) {
     onChanged?.call(selectedId, values); // selectedId es String? => compatible con Object?

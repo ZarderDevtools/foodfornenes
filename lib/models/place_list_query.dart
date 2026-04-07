@@ -13,6 +13,13 @@ class PlaceListQuery {
   final double? minAvgRating;
   final double? maxAvgPricePp;
   final String? search;
+
+  /// Filtro por tags: lista de UUIDs -> tags=uuid1,uuid2
+  final List<String>? tagsIn;
+
+  /// Filtro por áreas: lista de UUIDs -> area=uuid1,uuid2
+  final List<String>? areasIn;
+
   final String? ordering; // e.g. "name" o "-avg_rating"
   final int page;
 
@@ -24,6 +31,8 @@ class PlaceListQuery {
     this.minAvgRating,
     this.maxAvgPricePp,
     this.search,
+    this.tagsIn,
+    this.areasIn,
     this.ordering,
     this.page = 1,
   });
@@ -39,6 +48,8 @@ class PlaceListQuery {
     Object? minAvgRating = _unset,
     Object? maxAvgPricePp = _unset,
     Object? search = _unset,
+    Object? tagsIn = _unset,
+    Object? areasIn = _unset,
     Object? ordering = _unset,
     int? page,
   }) {
@@ -50,6 +61,8 @@ class PlaceListQuery {
       minAvgRating: identical(minAvgRating, _unset) ? this.minAvgRating : minAvgRating as double?,
       maxAvgPricePp: identical(maxAvgPricePp, _unset) ? this.maxAvgPricePp : maxAvgPricePp as double?,
       search: identical(search, _unset) ? this.search : search as String?,
+      tagsIn: identical(tagsIn, _unset) ? this.tagsIn : tagsIn as List<String>?,
+      areasIn: identical(areasIn, _unset) ? this.areasIn : areasIn as List<String>?,
       ordering: identical(ordering, _unset) ? this.ordering : ordering as String?,
       page: page ?? this.page,
     );
@@ -61,7 +74,15 @@ class PlaceListQuery {
     if (placeTypeId != null && placeTypeId!.isNotEmpty) {
       m["place_type"] = placeTypeId!;
     }
-    if (areaId != null && areaId!.isNotEmpty) {
+
+    // areasIn (multi) tiene prioridad sobre areaId (legacy single)
+    final cleanedAreasIn = (areasIn ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (cleanedAreasIn.isNotEmpty) {
+      m["area"] = cleanedAreasIn.join(",");
+    } else if (areaId != null && areaId!.isNotEmpty) {
       m["area"] = areaId!;
     }
 
@@ -84,6 +105,15 @@ class PlaceListQuery {
     if (maxAvgPricePp != null) {
       m["max_avg_price_pp"] = maxAvgPricePp!.toString();
     }
+
+    final cleanedTagsIn = (tagsIn ?? const <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (cleanedTagsIn.isNotEmpty) {
+      m["tags"] = cleanedTagsIn.join(",");
+    }
+
     if (search != null && search!.trim().isNotEmpty) {
       m["search"] = search!.trim();
     }

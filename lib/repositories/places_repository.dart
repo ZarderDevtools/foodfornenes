@@ -10,6 +10,24 @@ class PlacesRepository {
 
   PlacesRepository(this.api);
 
+  Future<Place> updatePlace(String id, Map<String, dynamic> payload) async {
+    final res = await api.patch('/api/v1/places/$id/', data: payload);
+    final data = res.data;
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Respuesta inesperada en PATCH /places/$id: $data');
+    }
+    return Place.fromJson(data);
+  }
+
+  Future<Place> fetchPlace(String id) async {
+    final res = await api.get('/api/v1/places/$id/');
+    final data = res.data;
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Respuesta inesperada en GET /places/$id: $data');
+    }
+    return Place.fromJson(data);
+  }
+
   Future<PagedResult<Place>> fetchPlaces(PlaceListQuery query) async {
     final res = await api.get(
       '/api/v1/places/',

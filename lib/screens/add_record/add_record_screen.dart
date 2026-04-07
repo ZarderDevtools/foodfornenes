@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/bottom_action.dart';
-import '../../widgets/bottom_bar.dart';
+import '../../widgets/app_scaffold.dart';
 import '../../widgets/form_fields/field_renderer.dart';
 import '../../widgets/form_fields/field_spec.dart';
 import 'add_record_config.dart';
@@ -130,45 +130,34 @@ class _AddRecordScreenState extends State<AddRecordScreen> {
           onTap: (_) => _submit(),
         );
 
-        return Scaffold(
-          backgroundColor: const Color(0xFFF6FBFF),
-          appBar: AppBar(
-            title: Text(widget.config.title),
-            centerTitle: true,
-            automaticallyImplyLeading: false,
-          ),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_values.globalError != null) ...[
-                    _GlobalErrorBox(message: _values.globalError!),
-                    const SizedBox(height: 16),
-                  ],
-                  for (final FieldSpec spec in widget.config.fields) ...[
-                    FieldRenderer(
-                      spec: spec,
-                      values: _values,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  const SizedBox(height: 8),
+        return AppScaffold(
+          title: widget.config.title,
+          floatingBar: false,
+          left: home,
+          center: save,
+          right: back,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.config.header != null) ...[
+                  widget.config.header!,
+                  const SizedBox(height: 16),
                 ],
-              ),
-            ),
-          ),
-
-          // ✅ Bottom bar calcada a Filtros (mismo widget y mismo estilo).
-          // Orden: [Home] [Guardar] [Back]
-          bottomNavigationBar: SafeArea(
-            top: false,
-            child: BottomBar3Slots(
-              floating: false,
-              left: home,
-              center: save,
-              right: back,
+                if (_values.globalError != null) ...[
+                  _GlobalErrorBox(message: _values.globalError!),
+                  const SizedBox(height: 16),
+                ],
+                for (final FieldSpec spec in widget.config.fields) ...[
+                  FieldRenderer(
+                    spec: spec,
+                    values: _values,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                const SizedBox(height: 8),
+              ],
             ),
           ),
         );

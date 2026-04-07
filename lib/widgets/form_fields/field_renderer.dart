@@ -8,6 +8,8 @@ import 'choice_field_widget.dart';
 import 'field_spec.dart';
 import 'number_field_spec.dart';
 import 'number_field_widget.dart';
+import 'multi_relation_field_spec.dart';
+import 'multi_relation_field_widget.dart';
 import 'relation_field_spec.dart';
 import 'relation_field_widget.dart';
 import 'text_field_spec.dart';
@@ -74,8 +76,16 @@ class FieldRenderer extends StatelessWidget {
         );
 
       case FieldKind.relation:
-        final s = spec as RelationFieldSpec; // <-- sin <dynamic>
+        final s = spec as RelationFieldSpec;
         return RelationFieldWidget(
+          spec: s,
+          values: values,
+          errorText: errorText,
+        );
+
+      case FieldKind.multiRelation:
+        final s = spec as MultiRelationFieldSpec;
+        return MultiRelationFieldWidget(
           spec: s,
           values: values,
           errorText: errorText,

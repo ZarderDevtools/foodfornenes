@@ -192,8 +192,6 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
           getId: (p) => p.id,
           getLabel: (p) => p.name,
 
-          // ✅ Botón "Añadir Sitio" debajo del selector
-          createLabel: 'Añadir Sitio',
           onCreate: (values) async {
             final currentTypeId = values.get<String>('place_type_id');
             final currentTypeLabel = _placeTypeNameById(currentTypeId);

@@ -10,8 +10,11 @@ enum FieldKind {
   number,
   choice,
 
-  /// ✅ Nuevo: selector/buscador de relación (ej. Place filtrado por PlaceType)
+  /// Selector/buscador de relación simple (devuelve un id String).
   relation,
+
+  /// Selector/buscador de relación múltiple (devuelve List<String> de ids).
+  multiRelation,
 }
 
 /// Firma estándar de validación por campo.

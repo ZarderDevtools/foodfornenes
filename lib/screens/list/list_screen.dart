@@ -497,15 +497,8 @@ class _ListCard<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = getName(item).trim();
 
-    final tagsAll =
+    final tags =
         getTags(item).map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
-    final tags = tagsAll.take(4).toList();
-    final hasMore = tagsAll.length > 4;
-
-    final tagsText = [
-      ...tags,
-      if (hasMore) '...',
-    ].join(' · ');
 
     final rating = getRatingAvg(item);
     final hasRating = rating != null;
@@ -515,7 +508,7 @@ class _ListCard<T> extends StatelessWidget {
     final hasPrice = price.isNotEmpty;
 
     return Material(
-      color: Theme.of(context).cardColor,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(14),
       elevation: 1,
       child: InkWell(
@@ -526,7 +519,7 @@ class _ListCard<T> extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Izquierda: nombre + tags
+              // Izquierda: nombre + tags (Expanded limita el ancho)
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -540,23 +533,17 @@ class _ListCard<T> extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      tagsText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                      ),
-                    ),
+                    if (tags.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _TagsRow(tags: tags),
+                    ],
                   ],
                 ),
               ),
 
               const SizedBox(width: 12),
 
-              // Derecha: rating + price
+              // Derecha: rating + price (no se ve afectada por los tags)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -587,6 +574,56 @@ class _ListCard<T> extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Chips de tags ──────────────────────────────────────────────────────────
+
+class _TagsRow extends StatelessWidget {
+  final List<String> tags;
+
+  const _TagsRow({required this.tags});
+
+  @override
+  Widget build(BuildContext context) {
+    const maxVisible = 3;
+    final visible = tags.take(maxVisible).toList();
+    final overflow = tags.length - visible.length;
+
+    return Wrap(
+      spacing: 5,
+      runSpacing: 4,
+      children: [
+        for (final tag in visible) _TagChip(label: tag),
+        if (overflow > 0) _TagChip(label: '+$overflow'),
+      ],
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  final String label;
+
+  const _TagChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F8F7),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFBFE6E3), width: 1),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          color: Color(0xFF2BB7A9),
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

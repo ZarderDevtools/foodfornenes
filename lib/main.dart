@@ -7,12 +7,22 @@ import 'screens/startup_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home/home_screen.dart';
 
+final navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Crear ApiClient y AuthRepository una sola vez
   final apiClient = await ApiClient.create();
   final authRepository = AuthRepository(apiClient);
+
+  // Redirigir a login si cualquier llamada API devuelve 401 irrecuperable
+  apiClient.onSessionExpired.listen((_) {
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      LoginScreen.routeName,
+      (route) => false,
+    );
+  });
 
   runApp(MyApp(
     apiClient: apiClient,
@@ -38,6 +48,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
+      navigatorKey: navigatorKey,
       // Ruta inicial: Startup
       home: StartupScreen(
         authRepository: authRepository,
