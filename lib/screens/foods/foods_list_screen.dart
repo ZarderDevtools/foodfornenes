@@ -13,6 +13,7 @@ import '../list/list_screen.dart';
 import "../sort/sort_definition.dart";
 import "../sort/sort_screen.dart";
 import 'add_food/add_food_flow.dart';
+import 'food_detail_screen.dart';
 
 class FoodsListScreen extends StatefulWidget {
   final String title;
@@ -193,7 +194,18 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
       getTags: (_) => const [],
       getRatingAvg: (_) => null,
       getPriceLevel: (_) => null,
-      onTapItem: (_) {},
+      onTapItem: (food) {
+        Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => FoodDetailScreen(foodId: food.id),
+          ),
+        ).then((wasEdited) {
+          if (wasEdited == true && mounted) {
+            setState(() => _query = _query.copyWith(page: 1));
+            service.loadFirstPage(_query);
+          }
+        });
+      },
       onCreate: () async {
         final created = await Navigator.of(context).push<bool>(
           MaterialPageRoute(builder: (_) => const AddFoodFlow()),

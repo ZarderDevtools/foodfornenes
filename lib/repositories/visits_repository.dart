@@ -1,6 +1,7 @@
 // lib/repositories/visits_repository.dart
 
 import '../config/network/paged_result.dart';
+import '../models/food_visit.dart';
 import '../models/visit.dart';
 import '../services/api_client.dart';
 
@@ -8,6 +9,33 @@ class VisitsRepository {
   final ApiClient api;
 
   VisitsRepository(this.api);
+
+  /// Obtiene las visitas asociadas a una comida concreta.
+  /// Endpoint: GET /api/v1/visit-foods/?food=<foodId>
+  Future<PagedResult<FoodVisit>> fetchFoodVisits(
+    String foodId, {
+    String ordering = '-created_at',
+    int page = 1,
+  }) async {
+    final res = await api.get(
+      '/api/v1/visit-foods/',
+      queryParameters: {
+        'food': foodId,
+        'ordering': ordering,
+        'page': page,
+      },
+    );
+
+    final data = res.data;
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Respuesta inesperada en GET /visit-foods/: $data');
+    }
+
+    return PagedResult<FoodVisit>.fromJson(
+      data,
+      (itemJson) => FoodVisit.fromJson(itemJson),
+    );
+  }
 
   /// Obtiene las visitas de un place concreto, ordenadas por defecto
   /// de más reciente a más antigua (-created_at).
