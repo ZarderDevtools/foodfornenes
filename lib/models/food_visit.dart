@@ -65,16 +65,28 @@ class FoodVisit {
         ? (visitMap['id'] ?? '').toString()
         : (visitRaw ?? '').toString();
 
+    DateTime? _parseDate(dynamic v) {
+      if (v == null) return null;
+      try {
+        return DateTime.parse(v.toString());
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final date = _parseDate(_field('date'));
+    final createdAt = _parseDate(_field('created_at')) ?? _parseDate(json['created_at']);
+
     return FoodVisit(
       id: (json['id'] ?? '').toString(),
       visitId: visitId,
       foodId: (json['food'] ?? '').toString(),
       placeName: _field('place_name')?.toString(),
-      date: DateTime.parse((_field('date') as String)),
+      date: date ?? createdAt ?? DateTime.now(),
       rating: _parseDouble(_field('rating')),
       pricePp: _parseDouble(_field('price_per_person')),
       comment: (_field('comment') ?? '').toString(),
-      createdAt: DateTime.parse((_field('created_at') as String)),
+      createdAt: createdAt ?? date ?? DateTime.now(),
     );
   }
 

@@ -132,16 +132,6 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
 
     final food = _food!;
 
-    final createdStr =
-        '${food.createdAt.day.toString().padLeft(2, '0')}/'
-        '${food.createdAt.month.toString().padLeft(2, '0')}/'
-        '${food.createdAt.year}';
-
-    final updatedStr =
-        '${food.updatedAt.day.toString().padLeft(2, '0')}/'
-        '${food.updatedAt.month.toString().padLeft(2, '0')}/'
-        '${food.updatedAt.year}';
-
     return AppScaffold(
       title: food.name,
       floatingBar: false,
@@ -155,26 +145,9 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
           children: [
             // ── Información general ──────────────────────────────────────
             DetailSection(
-              title: 'Información general',
+              title: '',
               children: [
                 DetailField(label: 'Nombre', value: food.name),
-                const SizedBox(height: 12),
-                DetailField(
-                  label: 'Estado',
-                  value: food.isActive ? 'Activa' : 'Inactiva',
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // ── Fechas ───────────────────────────────────────────────────
-            DetailSection(
-              title: 'Fechas',
-              children: [
-                DetailField(label: 'Fecha de creación', value: createdStr),
-                const SizedBox(height: 12),
-                DetailField(label: 'Última modificación', value: updatedStr),
               ],
             ),
 

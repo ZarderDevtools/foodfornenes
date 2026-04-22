@@ -7,6 +7,7 @@ import '../../models/food_visit.dart';
 import '../../repositories/visits_repository.dart';
 import '../../services/api_client.dart';
 import '../../widgets/app_scaffold.dart';
+import 'add_food_visit/add_food_visit_flow.dart';
 
 class FoodVisitsScreen extends StatefulWidget {
   final String foodId;
@@ -78,6 +79,26 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
     await _loadPage(_page + 1);
   }
 
+  Future<void> _openAddVisit() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AddFoodVisitFlow(
+          foodId: widget.foodId,
+          foodName: widget.foodName,
+        ),
+      ),
+    );
+    if (!mounted || created != true) return;
+    setState(() {
+      _visits = [];
+      _ready = false;
+      _hasMore = false;
+      _page = 1;
+      _error = null;
+    });
+    await _init();
+  }
+
   String _formatDate(DateTime date) {
     final y = date.year.toString().padLeft(4, '0');
     final m = date.month.toString().padLeft(2, '0');
@@ -89,12 +110,18 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
   Widget build(BuildContext context) {
     final home = BottomAction.home();
     final back = BottomAction.back();
+    final add = BottomAction.primary(
+      id: 'add',
+      icon: Icons.add_rounded,
+      onTap: (_) => _openAddVisit(),
+    );
 
     if (!_ready) {
       return AppScaffold(
         title: widget.foodName,
         floatingBar: false,
         left: home,
+        center: add,
         right: back,
         child: const Center(child: CircularProgressIndicator()),
       );
@@ -105,6 +132,7 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
         title: widget.foodName,
         floatingBar: false,
         left: home,
+        center: add,
         right: back,
         child: Center(
           child: Padding(
@@ -148,6 +176,7 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
         title: widget.foodName,
         floatingBar: false,
         left: home,
+        center: add,
         right: back,
         child: const Center(
           child: Text(
@@ -162,6 +191,7 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
       title: widget.foodName,
       floatingBar: false,
       left: home,
+      center: add,
       right: back,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
