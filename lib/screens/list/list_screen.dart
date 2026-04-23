@@ -39,6 +39,7 @@ class ListScreen<T> extends StatefulWidget {
     this.onSort, // (por ahora opcional)
     this.hasActiveFilters = false,
     this.hasActiveSort = false,
+    this.initialItems,
   }) : assert(
           fetchItems != null ||
               (fetchFirstPage != null && fetchNextPage != null && hasNextPage != null),
@@ -74,6 +75,9 @@ class ListScreen<T> extends StatefulWidget {
   final bool hasActiveFilters;
   final bool hasActiveSort;
 
+  // Datos precargados desde caché local (evita spinner en primera apertura)
+  final List<T>? initialItems;
+
   // Mensaje vacío
   final String? emptyMessageOverride;
 
@@ -98,7 +102,15 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
   @override
   void initState() {
     super.initState();
-    _load(initial: true);
+    final seeded = widget.initialItems;
+    if (seeded != null && seeded.isNotEmpty) {
+      // Show cached data immediately, then refresh from API without spinner
+      _items = seeded;
+      _loading = false;
+      _load();
+    } else {
+      _load(initial: true);
+    }
   }
 
   @override
@@ -160,7 +172,8 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        // If cached items are showing, suppress the error silently
+        if (_items.isEmpty) _error = e.toString();
       });
     } finally {
       if (!mounted) return;

@@ -1,6 +1,5 @@
 // lib/repositories/auth_repository.dart
 
-import 'package:dio/dio.dart';
 import '../services/api_client.dart';
 
 class AuthRepository {
@@ -33,29 +32,12 @@ class AuthRepository {
     await api.saveTokens(access: access, refresh: refresh);
   }
 
-  /// Devuelve true solo si hay token y (si existe) el endpoint verify lo valida.
+  /// Devuelve true si existe sesión local (token presente y no vacío).
+  /// La validación real contra el backend la gestiona el interceptor de Dio
+  /// en el momento natural de cada petición.
   Future<bool> hasValidSession() async {
     final token = await api.getAccessToken();
-    if (token == null || token.isEmpty) return false;
-
-    // Intentamos verificar token si el backend lo soporta.
-    try {
-      await api.post(
-        '/api/v1/auth/jwt/verify/',
-        data: {'token': token},
-      );
-      return true;
-    } catch (e) {
-      // Si el backend NO tiene verify, devolvería 404.
-      // En ese caso, asumimos "hay sesión" y dejamos que falle cuando toque.
-      if (e is ApiException && e.statusCode == 404) {
-        return true;
-      }
-
-      // Para 401/403 u otros errores, limpiamos tokens y obligamos login.
-      await api.clearTokens();
-      return false;
-    }
+    return token != null && token.isNotEmpty;
   }
 
   Future<void> logout() async {

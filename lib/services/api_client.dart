@@ -179,8 +179,6 @@ class ApiClient {
     if (refresh != null) {
       await _storage.write(key: _kRefreshTokenKey, value: refresh);
     }
-    
-    final storedRefresh = await _storage.read(key: _kRefreshTokenKey);
   }
 
   /// Borra tokens (logout).

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../services/api_client.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/categorization_repository.dart';
@@ -20,11 +21,13 @@ class HomeScreen extends StatefulWidget {
 
   final ApiClient apiClient;
   final AuthRepository authRepository;
+  final AppDatabase db;
 
   const HomeScreen({
     super.key,
     required this.apiClient,
     required this.authRepository,
+    required this.db,
   });
 
   @override
@@ -209,9 +212,11 @@ class _HomeScreenState extends State<HomeScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => const FoodsListScreen(
+          builder: (_) => FoodsListScreen(
             title: 'Comidas',
             ordering: 'name',
+            apiClient: widget.apiClient,
+            db: widget.db,
           ),
         ),
       );

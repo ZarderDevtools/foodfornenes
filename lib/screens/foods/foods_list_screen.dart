@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../models/food.dart';
 import '../../models/food_list_query.dart';
 import '../../repositories/foods_repository.dart';
@@ -18,11 +19,15 @@ import 'food_detail_screen.dart';
 class FoodsListScreen extends StatefulWidget {
   final String title;
   final String? ordering;
+  final ApiClient apiClient;
+  final AppDatabase db;
 
   const FoodsListScreen({
     super.key,
     required this.title,
     this.ordering,
+    required this.apiClient,
+    required this.db,
   });
 
   @override
@@ -35,6 +40,7 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
 
   bool _ready = false;
   String? _initError;
+  List<Food>? _cachedItems;
 
   @override
   void initState() {
@@ -49,13 +55,20 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
 
   Future<void> _init() async {
     try {
-      final api = await ApiClient.create();
-      final repo = FoodsRepository(api);
+      final repo = FoodsRepository(widget.apiClient, dao: widget.db.foodsDao);
       final service = FoodsService(repo);
+
+      // Load cached foods before showing the screen
+      final cached = await repo.getCachedFoods();
+      final qIsActive = _query.isActive;
+      final filtered = cached?.where(
+        (f) => qIsActive == null || f.isActive == qIsActive,
+      ).toList();
 
       if (!mounted) return;
       setState(() {
         _service = service;
+        _cachedItems = (filtered?.isNotEmpty == true) ? filtered : null;
         _ready = true;
       });
     } catch (e) {
@@ -119,13 +132,9 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
       ),
     );
 
-    // Si el usuario vuelve con el back del sistema o algo raro:
     if (result == null) return;
-
-    // Cancelar -> no hacemos nada
     if (!result.applied) return;
 
-    // Aplicar (ordering puede ser null si limpió)
     setState(() {
       _query = _query.copyWith(ordering: result.ordering);
     });
@@ -187,6 +196,7 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
 
     return ListScreen<Food>(
       title: widget.title,
+      initialItems: _cachedItems,
       fetchFirstPage: () => service.loadFirstPage(_query),
       fetchNextPage: () => service.loadNextPage(),
       hasNextPage: () => service.hasNext,
@@ -212,7 +222,6 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
         );
 
         if (created == true) {
-          // Volvemos a primera página para ver el nuevo registro
           setState(() {
             _query = _query.copyWith(page: 1);
           });
@@ -225,10 +234,7 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
       onFilters: _openFilters,
       onSort: _openSort,
 
-      // ✅ pinta botón filtros "activo"
       hasActiveFilters: _hasActiveFilters,
-
-      // ✅ pinta botón ordenar "activo"
       hasActiveSort: (_query.ordering ?? "").trim().isNotEmpty,
     );
   }

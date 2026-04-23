@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 
+import 'local/app_database.dart';
 import 'services/api_client.dart';
 import 'repositories/auth_repository.dart';
 import 'screens/startup_screen.dart';
@@ -12,9 +13,10 @@ final navigatorKey = GlobalKey<NavigatorState>();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Crear ApiClient y AuthRepository una sola vez
+  // Crear ApiClient, AuthRepository y AppDatabase una sola vez
   final apiClient = await ApiClient.create();
   final authRepository = AuthRepository(apiClient);
+  final db = AppDatabase();
 
   // Redirigir a login si cualquier llamada API devuelve 401 irrecuperable
   apiClient.onSessionExpired.listen((_) {
@@ -27,17 +29,20 @@ Future<void> main() async {
   runApp(MyApp(
     apiClient: apiClient,
     authRepository: authRepository,
+    db: db,
   ));
 }
 
 class MyApp extends StatelessWidget {
   final ApiClient apiClient;
   final AuthRepository authRepository;
+  final AppDatabase db;
 
   const MyApp({
     super.key,
     required this.apiClient,
     required this.authRepository,
+    required this.db,
   });
 
   @override
@@ -63,6 +68,7 @@ class MyApp extends StatelessWidget {
         HomeScreen.routeName: (context) => HomeScreen(
               apiClient: apiClient,
               authRepository: authRepository,
+              db: db,
             ),
       },
     );
