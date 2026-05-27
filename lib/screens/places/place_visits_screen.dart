@@ -2,20 +2,26 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../models/bottom_action.dart';
 import '../../models/visit.dart';
 import '../../repositories/visits_repository.dart';
 import '../../services/api_client.dart';
 import '../../widgets/app_scaffold.dart';
+import '../visits/add_visit/add_visit_flow.dart';
 
 class PlaceVisitsScreen extends StatefulWidget {
   final String placeId;
   final String placeName;
+  final String? placeTypeId;
+  final AppDatabase db;
 
   const PlaceVisitsScreen({
     super.key,
     required this.placeId,
     required this.placeName,
+    this.placeTypeId,
+    required this.db,
   });
 
   @override
@@ -29,6 +35,7 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
   bool _loadingMore = false;
   bool _hasMore = false;
   int _page = 1;
+  bool _offlineEmpty = false;
 
   VisitsRepository? _repo;
 
@@ -41,8 +48,45 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
   Future<void> _init() async {
     try {
       final api = await ApiClient.create();
-      _repo = VisitsRepository(api);
-      await _loadPage(1);
+      final repo = VisitsRepository(api, visitsDao: widget.db.visitsDao);
+      _repo = repo;
+
+      final cached = await repo.getCachedPlaceVisits(widget.placeId);
+
+      if (cached != null && cached.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _visits = cached;
+          _hasMore = false;
+          _ready = true;
+        });
+        // Refresh from API in background; ignore failures silently.
+        try {
+          await _loadPage(1);
+          // Re-merge pending visits: the API result doesn't include unsynced
+          // local records, so we re-read them from cache and prepend them.
+          final pending = await repo.getCachedPendingVisits(widget.placeId);
+          if (pending.isNotEmpty && mounted) {
+            setState(() {
+              final apiIds = _visits.map((v) => v.id).toSet();
+              final toAdd =
+                  pending.where((v) => !apiIds.contains(v.id)).toList();
+              if (toAdd.isNotEmpty) _visits = [...toAdd, ..._visits];
+            });
+          }
+        } catch (_) {}
+      } else {
+        // No local data: try API; on failure show friendly empty state.
+        try {
+          await _loadPage(1);
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _ready = true;
+            _offlineEmpty = true;
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -72,10 +116,38 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
     });
   }
 
+  Future<void> _openAddVisit() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AddVisitFlow(
+          db: widget.db,
+          defaultPlaceId: widget.placeId,
+          defaultPlaceName: widget.placeName,
+          defaultPlaceTypeId: widget.placeTypeId,
+        ),
+      ),
+    );
+    if (!mounted || created != true) return;
+    setState(() {
+      _visits = [];
+      _ready = false;
+      _hasMore = false;
+      _page = 1;
+      _error = null;
+      _offlineEmpty = false;
+      _loadingMore = false;
+    });
+    await _init();
+  }
+
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
-    await _loadPage(_page + 1);
+    try {
+      await _loadPage(_page + 1);
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -89,12 +161,18 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
   Widget build(BuildContext context) {
     final home = BottomAction.home();
     final back = BottomAction.back();
+    final add = BottomAction.primary(
+      id: 'add',
+      icon: Icons.add_rounded,
+      onTap: (_) => _openAddVisit(),
+    );
 
     if (!_ready) {
       return AppScaffold(
         title: widget.placeName,
         floatingBar: false,
         left: home,
+        center: add,
         right: back,
         child: const Center(child: CircularProgressIndicator()),
       );
@@ -105,6 +183,7 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
         title: widget.placeName,
         floatingBar: false,
         left: home,
+        center: add,
         right: back,
         child: Center(
           child: Padding(
@@ -144,15 +223,23 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
     }
 
     if (_visits.isEmpty) {
+      final emptyMessage = _offlineEmpty
+          ? 'No hay visitas guardadas todavía.\nCuando se sincronice la app, aparecerán aquí.'
+          : 'No hay visitas registradas.';
       return AppScaffold(
         title: widget.placeName,
         floatingBar: false,
         left: home,
+        center: add,
         right: back,
-        child: const Center(
-          child: Text(
-            'No hay visitas registradas.',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              emptyMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+            ),
           ),
         ),
       );
@@ -162,6 +249,7 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
       title: widget.placeName,
       floatingBar: false,
       left: home,
+      center: add,
       right: back,
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
@@ -175,7 +263,7 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
         child: ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           itemCount: _visits.length + (_loadingMore ? 1 : 0),
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          separatorBuilder: (context, index) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             if (index == _visits.length) {
               return const Center(

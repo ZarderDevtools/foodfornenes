@@ -82,6 +82,7 @@ class FoodsRepository {
         householdId: Value(food.householdId),
         name: Value(food.name),
         isActive: Value(food.isActive),
+        syncStatus: const Value('synced'),
         createdAt: Value(food.createdAt),
         updatedAt: Value(food.updatedAt),
       );

@@ -1,8 +1,13 @@
 // lib/screens/visits/add_visit/add_visit_flow.dart
 
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 
+import '../../../local/app_database.dart';
 import '../../../models/place.dart';
+import '../../../models/visit.dart';
 import '../../../models/place_list_query.dart';
 import '../../../models/place_type.dart';
 import '../../../repositories/categorization_repository.dart';
@@ -19,7 +24,18 @@ import '../../../widgets/form_fields/text_field_spec.dart';
 import '../../places/add_place/add_place_flow.dart';
 
 class AddVisitFlow extends StatefulWidget {
-  const AddVisitFlow({super.key});
+  final AppDatabase db;
+  final String? defaultPlaceId;
+  final String? defaultPlaceName;
+  final String? defaultPlaceTypeId;
+
+  const AddVisitFlow({
+    super.key,
+    required this.db,
+    this.defaultPlaceId,
+    this.defaultPlaceName,
+    this.defaultPlaceTypeId,
+  });
 
   @override
   State<AddVisitFlow> createState() => _AddVisitFlowState();
@@ -32,6 +48,7 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
   ApiClient? _api;
   List<PlaceType> _placeTypes = const [];
   String? _defaultPlaceTypeId;
+  bool _offlineEmpty = false;
 
   @override
   void initState() {
@@ -40,35 +57,102 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
   }
 
   Future<void> _init() async {
+    ApiClient? api;
     try {
-      final api = await ApiClient.create();
-      final catRepo = CategorizationRepository(api);
-
-      final types = await catRepo.listPlaceTypes(
-        isActive: true,
-        ordering: 'name',
-        page: 1,
-      );
-
-      final rest = types.cast<PlaceType?>().firstWhere(
-            (t) => (t?.name ?? '').trim().toLowerCase() == 'restaurante',
-            orElse: () => null,
-          );
-
-      if (!mounted) return;
-      setState(() {
-        _api = api;
-        _placeTypes = types;
-        _defaultPlaceTypeId = rest?.id ?? (types.isNotEmpty ? types.first.id : null);
-        _loading = false;
-      });
+      api = await ApiClient.create();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
       });
+      return;
     }
+
+    try {
+      final catRepo = CategorizationRepository(api, dao: widget.db.placeTypesDao);
+
+      // Try cache first
+      final cached = await catRepo.getCachedPlaceTypes();
+      if (cached != null && cached.isNotEmpty) {
+        final rest = _findRestauranteType(cached);
+        if (!mounted) return;
+        setState(() {
+          _api = api;
+          _placeTypes = cached;
+          _defaultPlaceTypeId = widget.defaultPlaceTypeId ??
+              rest?.id ??
+              (cached.isNotEmpty ? cached.first.id : null);
+          _loading = false;
+        });
+        _backgroundRefreshPlaceTypes(catRepo);
+        return;
+      }
+
+      // No cache: try API
+      final types = await catRepo.listPlaceTypes(isActive: true, ordering: 'name', page: 1);
+      final rest = _findRestauranteType(types);
+      if (!mounted) return;
+      setState(() {
+        _api = api;
+        _placeTypes = types;
+        _defaultPlaceTypeId = widget.defaultPlaceTypeId ??
+            rest?.id ??
+            (types.isNotEmpty ? types.first.id : null);
+        _loading = false;
+      });
+    } catch (_) {
+      // API down and no cache: show friendly empty state
+      if (!mounted) return;
+      setState(() {
+        _api = api;
+        _placeTypes = [];
+        _offlineEmpty = true;
+        _loading = false;
+      });
+    }
+  }
+
+  PlaceType? _findRestauranteType(List<PlaceType> types) =>
+      types.cast<PlaceType?>().firstWhere(
+        (t) => (t?.name ?? '').trim().toLowerCase() == 'restaurante',
+        orElse: () => null,
+      );
+
+  void _backgroundRefreshPlaceTypes(CategorizationRepository catRepo) async {
+    try {
+      await catRepo.listPlaceTypes(isActive: true, ordering: 'name', page: 1);
+    } catch (_) {}
+  }
+
+  Future<void> _saveLocalPending({
+    required String placeId,
+    required String date,
+    required double? rating,
+    required double? pricePp,
+    required String comment,
+    required Map<String, dynamic> payload,
+  }) async {
+    final localId = 'local_${DateTime.now().microsecondsSinceEpoch}';
+    await widget.db.transaction(() async {
+      await widget.db.visitsDao.upsertVisit(VisitsCacheCompanion(
+        id: Value(localId),
+        placeId: Value(placeId),
+        authorId: const Value(''),
+        date: Value(DateTime.parse(date)),
+        rating: Value(rating),
+        pricePp: Value(pricePp),
+        comment: Value(comment),
+        syncStatus: const Value('pending_create'),
+        createdAt: Value(DateTime.now()),
+      ));
+      await widget.db.syncQueueDao.insertPending(
+        entityType: 'visit',
+        operation: 'create',
+        localEntityId: localId,
+        payloadJson: jsonEncode(payload),
+      );
+    });
   }
 
   String? _placeTypeNameById(String? id) {
@@ -133,8 +217,58 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
       );
     }
 
+    if (_offlineEmpty) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF6FBFF),
+        appBar: AppBar(
+          title: const Text('Añadir visita'),
+          centerTitle: true,
+          automaticallyImplyLeading: false,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off_rounded, size: 36, color: Colors.grey),
+                const SizedBox(height: 10),
+                const Text(
+                  'Sin datos locales disponibles.\nConéctate al menos una vez para poder usar esta pantalla sin red.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.arrow_back_rounded),
+                      label: const Text('Volver'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _loading = true;
+                          _offlineEmpty = false;
+                        });
+                        _init();
+                      },
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final api = _api!;
-    final placesRepo = PlacesRepository(api);
+    final placesRepo = PlacesRepository(api, dao: widget.db.placesDao);
 
     final placeTypeOptions = _placeTypes
         .map((pt) => ChoiceItem<String>(value: pt.id, label: pt.name))
@@ -144,6 +278,8 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
       title: 'Añadir visita',
       initialValues: {
         if (_defaultPlaceTypeId != null) 'place_type_id': _defaultPlaceTypeId,
+        if (widget.defaultPlaceId != null) 'place_id': widget.defaultPlaceId,
+        if (widget.defaultPlaceName != null) 'place_id__label': widget.defaultPlaceName,
       },
       fields: [
         // 1) Tipo (PlaceType)
@@ -186,8 +322,12 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
               page: 1,
             );
 
-            final paged = await placesRepo.fetchPlaces(q);
-            return paged.results;
+            try {
+              final paged = await placesRepo.fetchPlaces(q);
+              return paged.results;
+            } catch (_) {
+              return placesRepo.searchCachedPlaces(typeId, search);
+            }
           },
           getId: (p) => p.id,
           getLabel: (p) => p.name,
@@ -199,6 +339,8 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
             final created = await Navigator.of(context).push<Place>(
               MaterialPageRoute(
                 builder: (_) => AddPlaceFlow(
+                  api: _api!,
+                  db: widget.db,
                   defaultPlaceTypeId: currentTypeId,
                   defaultPlaceTypeLabel: currentTypeLabel,
                 ),
@@ -287,24 +429,62 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
 
         final rating = _toDouble(ratingRaw);
         final pricePp = _toDouble(priceRaw);
+        final commentTrimmed = comment?.trim() ?? '';
 
         final now = DateTime.now();
         final date = '${now.year.toString().padLeft(4, '0')}-'
             '${now.month.toString().padLeft(2, '0')}-'
             '${now.day.toString().padLeft(2, '0')}';
 
-        await api.post(
-          '/api/v1/visits/',
-          data: <String, dynamic>{
-            'place': placeId,
-            'date': date,
-            'rating': rating,
-            'price_per_person': pricePp,
-            if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
-          },
-        );
+        final payload = <String, dynamic>{
+          'place': placeId,
+          'date': date,
+          'rating': rating,
+          'price_per_person': pricePp,
+          if (commentTrimmed.isNotEmpty) 'comment': commentTrimmed,
+        };
 
-        if (context.mounted) Navigator.of(context).pop(true);
+        try {
+          final res = await api.post('/api/v1/visits/', data: payload);
+          final responseData = res.data;
+          if (responseData is Map<String, dynamic>) {
+            try {
+              final visit = Visit.fromJson(responseData);
+              await widget.db.visitsDao.upsertVisit(VisitsCacheCompanion(
+                id: Value(visit.id),
+                placeId: Value(visit.placeId),
+                authorId: Value(visit.authorId),
+                date: Value(visit.date),
+                rating: Value(visit.rating),
+                pricePp: Value(visit.pricePp),
+                comment: Value(visit.comment),
+                syncStatus: const Value('synced'),
+                createdAt: Value(visit.createdAt),
+              ));
+            } catch (_) {
+              // Cache write failed after a successful POST.
+              // The visit exists on the server; GlobalSyncService will cache it.
+            }
+          }
+          if (context.mounted) Navigator.of(context).pop(true);
+        } on ApiException catch (e) {
+          final code = e.statusCode;
+          if (code != null && code >= 400 && code < 500) {
+            rethrow; // Error de validación: AddRecordScreen muestra el error
+          }
+          // Error temporal (red, timeout, 5xx): guardar offline y cerrar
+          if (placeId != null) {
+            await _saveLocalPending(
+              placeId: placeId,
+              date: date,
+              rating: rating,
+              pricePp: pricePp,
+              comment: commentTrimmed,
+              payload: payload,
+            );
+          }
+          if (context.mounted) Navigator.of(context).pop(true);
+        }
       },
     );
 

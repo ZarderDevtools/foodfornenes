@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../models/bottom_action.dart';
 import '../../models/food.dart';
 import '../../repositories/foods_repository.dart';
@@ -13,8 +14,15 @@ import 'food_visits_screen.dart';
 
 class FoodDetailScreen extends StatefulWidget {
   final String foodId;
+  final Food? initialFood;
+  final AppDatabase db;
 
-  const FoodDetailScreen({super.key, required this.foodId});
+  const FoodDetailScreen({
+    super.key,
+    required this.foodId,
+    required this.db,
+    this.initialFood,
+  });
 
   @override
   State<FoodDetailScreen> createState() => _FoodDetailScreenState();
@@ -29,7 +37,13 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.initialFood != null) {
+      _food = widget.initialFood;
+      _ready = true;
+      _load(silentRefresh: true);
+    } else {
+      _load();
+    }
   }
 
   Future<void> _openEdit() async {
@@ -43,7 +57,7 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     setState(() => _food = updated);
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool silentRefresh = false}) async {
     try {
       final api = await ApiClient.create();
       final repo = FoodsRepository(api);
@@ -52,10 +66,11 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
       if (!mounted) return;
       setState(() {
         _food = food;
-        _ready = true;
+        if (!silentRefresh) _ready = true;
       });
     } catch (e) {
       if (!mounted) return;
+      if (silentRefresh) return;
       setState(() {
         _error = e.toString();
         _ready = true;
@@ -69,10 +84,13 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     final back = BottomAction.back().copyWith(
       onTap: (ctx) => Navigator.of(ctx).pop(_wasEdited),
     );
+    // Disable editing while the food is pending sync (local ID not yet resolved).
+    final isPending = _food?.id.startsWith('local_') ?? false;
     final edit = BottomAction.primary(
       id: 'edit',
       icon: Icons.edit_rounded,
-      onTap: (_) => _openEdit(),
+      enabled: !isPending,
+      onTap: isPending ? (_) {} : (_) => _openEdit(),
     );
 
     if (!_ready) {
@@ -154,16 +172,20 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
             const SizedBox(height: 24),
 
             // ── Acciones ─────────────────────────────────────────────────
-            _VisitsButton(onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => FoodVisitsScreen(
-                    foodId: food.id,
-                    foodName: food.name,
+            // Visits are not accessible while the food is pending sync:
+            // using a local ID as a FoodVisit FK would fail on the backend.
+            if (!isPending)
+              _VisitsButton(onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => FoodVisitsScreen(
+                      foodId: food.id,
+                      foodName: food.name,
+                      db: widget.db,
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
           ],
         ),
       ),

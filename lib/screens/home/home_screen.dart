@@ -1,9 +1,11 @@
 // screens/home/home_screen.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../local/app_database.dart';
 import '../../services/api_client.dart';
+import '../../services/global_sync_service.dart';
 import '../../repositories/auth_repository.dart';
 import '../../repositories/categorization_repository.dart';
 import '../../models/place_type.dart';
@@ -22,12 +24,14 @@ class HomeScreen extends StatefulWidget {
   final ApiClient apiClient;
   final AuthRepository authRepository;
   final AppDatabase db;
+  final GlobalSyncService syncService;
 
   const HomeScreen({
     super.key,
     required this.apiClient,
     required this.authRepository,
     required this.db,
+    required this.syncService,
   });
 
   @override
@@ -36,13 +40,50 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final CategorizationRepository _repo;
-  late Future<List<PlaceType>> _futurePlaceTypes;
+
+  List<PlaceType>? _placeTypes;
+  bool _placeTypesLoading = true;
+  String? _placeTypesError;
+  bool _debugSyncing = false;
 
   @override
   void initState() {
     super.initState();
-    _repo = CategorizationRepository(widget.apiClient);
-    _futurePlaceTypes = _repo.listPlaceTypes(isActive: true);
+    _repo = CategorizationRepository(
+      widget.apiClient,
+      dao: widget.db.placeTypesDao,
+    );
+    widget.syncService.syncIfNeeded();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final cached = await _repo.getCachedPlaceTypes();
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _placeTypes = cached;
+        _placeTypesLoading = false;
+      });
+    }
+
+    try {
+      final fresh = await _repo.listPlaceTypes(isActive: true);
+      if (!mounted) return;
+      setState(() {
+        _placeTypes = fresh;
+        _placeTypesLoading = false;
+        _placeTypesError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _placeTypesLoading = false;
+        if (_placeTypes == null || _placeTypes!.isEmpty) {
+          _placeTypesError = e.toString();
+        }
+      });
+    }
   }
 
   @override
@@ -58,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // ✅ NUEVO: pantalla de nueva visita
         onTap: (ctx) async {
           final created = await Navigator.of(ctx).push<bool>(
-            MaterialPageRoute(builder: (_) => const AddVisitFlow()),
+            MaterialPageRoute(builder: (_) => AddVisitFlow(db: widget.db)),
           );
 
           // Opcional: feedback rápido si se creó
@@ -74,6 +115,30 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Column(
                 children: [
+                  if (kDebugMode) ...[
+                    ElevatedButton.icon(
+                      onPressed: _debugSyncing
+                          ? null
+                          : () async {
+                              setState(() => _debugSyncing = true);
+                              await widget.syncService.forceSync();
+                              if (mounted) setState(() => _debugSyncing = false);
+                            },
+                      icon: _debugSyncing
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync, size: 16),
+                      label: Text(_debugSyncing ? 'Sincronizando…' : '[DEBUG] Sync ahora'),
+                      style: ElevatedButton.styleFrom(
+                        textStyle: const TextStyle(fontSize: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   _SectionTitle(title: ""), // Accesos
                   const SizedBox(height: 10),
 
@@ -116,57 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 10),
 
                   Expanded(
-                    child: FutureBuilder<List<PlaceType>>(
-                      future: _futurePlaceTypes,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              'Error cargando categorías\n${snapshot.error}',
-                              textAlign: TextAlign.center,
-                            ),
-                          );
-                        }
-
-                        final items = snapshot.data ?? [];
-
-                        // Excluir "Restaurante"
-                        final filtered = items
-                            .where((pt) => pt.name.trim().toLowerCase() != 'restaurante')
-                            .toList();
-
-                        if (filtered.isEmpty) {
-                          return const Center(child: Text(''));
-                        }
-
-                        return GridView.builder(
-                          // IMPORTANTE:
-                          // Dejamos bastante espacio abajo para que la barra no tape el grid
-                          padding: const EdgeInsets.only(bottom: 160),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 2.4,
-                          ),
-                          itemCount: filtered.length,
-                          itemBuilder: (context, index) {
-                            final pt = filtered[index];
-                            return _SmallButton(
-                              label: pt.name,
-                              background: Colors.white,
-                              borderColor: border,
-                              onTap: () {
-                                _openGenericPlacetypeList(pt);
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
+                    child: _buildCategoriesGrid(border),
                   ),
                 ],
               ),
@@ -174,11 +189,61 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _openRestaurantsList() async {
-    try {
-      final items = await _futurePlaceTypes;
+  Widget _buildCategoriesGrid(Color border) {
+    if (_placeTypesLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_placeTypesError != null) {
+      return Center(
+        child: Text(
+          'Error cargando categorías\n$_placeTypesError',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
 
-      final rest = items.firstWhere(
+    final items = _placeTypes ?? [];
+    final filtered = items
+        .where((pt) => pt.name.trim().toLowerCase() != 'restaurante')
+        .toList();
+
+    if (filtered.isEmpty) {
+      return const Center(child: Text(''));
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.only(bottom: 160),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 2.4,
+      ),
+      itemCount: filtered.length,
+      itemBuilder: (context, index) {
+        final pt = filtered[index];
+        return _SmallButton(
+          label: pt.name,
+          background: Colors.white,
+          borderColor: border,
+          onTap: () => _openGenericPlacetypeList(pt),
+        );
+      },
+    );
+  }
+
+  Future<void> _openRestaurantsList() async {
+    final types = _placeTypes;
+    if (types == null || types.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cargando categorías, intenta de nuevo')),
+      );
+      return;
+    }
+
+    try {
+      final rest = types.firstWhere(
         (pt) => pt.name.trim().toLowerCase() == 'restaurante',
       );
 
@@ -191,6 +256,8 @@ class _HomeScreenState extends State<HomeScreen> {
             placeTypeId: rest.id,
             title: 'Restaurantes',
             ordering: '-avg_rating',
+            apiClient: widget.apiClient,
+            db: widget.db,
           ),
         ),
       );
@@ -242,6 +309,8 @@ class _HomeScreenState extends State<HomeScreen> {
             placeTypeId: placeType.id,
             title: placeType.name,
             ordering: '-avg_rating',
+            apiClient: widget.apiClient,
+            db: widget.db,
           ),
         ),
       );

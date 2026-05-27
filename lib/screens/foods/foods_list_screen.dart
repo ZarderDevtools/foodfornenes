@@ -40,6 +40,7 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
 
   bool _ready = false;
   String? _initError;
+  List<Food> _allCached = const [];
   List<Food>? _cachedItems;
 
   @override
@@ -58,17 +59,14 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
       final repo = FoodsRepository(widget.apiClient, dao: widget.db.foodsDao);
       final service = FoodsService(repo);
 
-      // Load cached foods before showing the screen
       final cached = await repo.getCachedFoods();
-      final qIsActive = _query.isActive;
-      final filtered = cached?.where(
-        (f) => qIsActive == null || f.isActive == qIsActive,
-      ).toList();
+      _allCached = cached ?? const [];
+      final filtered = _applyLocalFilter(_allCached, _query);
 
       if (!mounted) return;
       setState(() {
         _service = service;
-        _cachedItems = (filtered?.isNotEmpty == true) ? filtered : null;
+        _cachedItems = filtered.isNotEmpty ? filtered : null;
         _ready = true;
       });
     } catch (e) {
@@ -78,6 +76,39 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
         _ready = true;
       });
     }
+  }
+
+  List<Food> _applyLocalFilter(List<Food> all, FoodListQuery q) {
+    var result = all.where((f) {
+      if (q.isActive != null && f.isActive != q.isActive) return false;
+      final search = q.search?.trim().toLowerCase();
+      if (search != null && search.isNotEmpty && !f.name.toLowerCase().contains(search)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    final ordering = q.ordering;
+    if (ordering != null && ordering.trim().isNotEmpty) {
+      final desc = ordering.startsWith('-');
+      final field = desc ? ordering.substring(1) : ordering;
+      result.sort((a, b) {
+        int cmp;
+        switch (field) {
+          case 'name':
+            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          case 'created_at':
+            cmp = a.createdAt.compareTo(b.createdAt);
+          case 'updated_at':
+            cmp = a.updatedAt.compareTo(b.updatedAt);
+          default:
+            cmp = 0;
+        }
+        return desc ? -cmp : cmp;
+      });
+    }
+
+    return result;
   }
 
   bool get _hasActiveFilters {
@@ -113,6 +144,7 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
 
     setState(() {
       _query = result.copyWith(page: 1);
+      _cachedItems = _applyLocalFilter(_allCached, _query);
     });
   }
 
@@ -137,10 +169,8 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
 
     setState(() {
       _query = _query.copyWith(ordering: result.ordering);
+      _cachedItems = _applyLocalFilter(_allCached, _query);
     });
-    final service = _service;
-    if (service == null) return;
-    await service.loadFirstPage(_query);
   }
 
   @override
@@ -207,7 +237,7 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
       onTapItem: (food) {
         Navigator.of(context).push<bool>(
           MaterialPageRoute(
-            builder: (_) => FoodDetailScreen(foodId: food.id),
+            builder: (_) => FoodDetailScreen(foodId: food.id, initialFood: food, db: widget.db),
           ),
         ).then((wasEdited) {
           if (wasEdited == true && mounted) {
@@ -218,15 +248,25 @@ class _FoodsListScreenState extends State<FoodsListScreen> {
       },
       onCreate: () async {
         final created = await Navigator.of(context).push<bool>(
-          MaterialPageRoute(builder: (_) => const AddFoodFlow()),
+          MaterialPageRoute(
+            builder: (_) => AddFoodFlow(api: widget.apiClient, db: widget.db),
+          ),
         );
 
-        if (created == true) {
-          setState(() {
-            _query = _query.copyWith(page: 1);
-          });
-          await service.loadFirstPage(_query);
-        }
+        if (!mounted || created != true) return;
+
+        // Reload from local cache first so pending foods appear immediately,
+        // then let ListScreen do a background API refresh via didUpdateWidget.
+        final freshRepo =
+            FoodsRepository(widget.apiClient, dao: widget.db.foodsDao);
+        final cached = await freshRepo.getCachedFoods();
+        if (!mounted) return;
+
+        _allCached = cached ?? const [];
+        setState(() {
+          _query = _query.copyWith(page: 1);
+          _cachedItems = _applyLocalFilter(_allCached, _query);
+        });
       },
       onHome: () => Navigator.popUntil(context, (route) => route.isFirst),
       onBack: () => Navigator.pop(context),

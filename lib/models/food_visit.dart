@@ -84,7 +84,7 @@ class FoodVisit {
       placeName: _field('place_name')?.toString(),
       date: date ?? createdAt ?? DateTime.now(),
       rating: _parseDouble(_field('rating')),
-      pricePp: _parseDouble(_field('price_per_person')),
+      pricePp: _parseDouble(_field('price_per_person')) ?? _parseDouble(json['price_paid']),
       comment: (_field('comment') ?? '').toString(),
       createdAt: createdAt ?? date ?? DateTime.now(),
     );

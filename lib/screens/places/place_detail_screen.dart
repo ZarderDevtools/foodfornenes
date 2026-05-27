@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../models/bottom_action.dart';
 import '../../models/place.dart';
 import '../../repositories/places_repository.dart';
@@ -14,8 +15,15 @@ import 'place_visits_screen.dart';
 
 class PlaceDetailScreen extends StatefulWidget {
   final String placeId;
+  final Place? initialPlace;
+  final AppDatabase db;
 
-  const PlaceDetailScreen({super.key, required this.placeId});
+  const PlaceDetailScreen({
+    super.key,
+    required this.placeId,
+    required this.db,
+    this.initialPlace,
+  });
 
   @override
   State<PlaceDetailScreen> createState() => _PlaceDetailScreenState();
@@ -30,7 +38,13 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.initialPlace != null) {
+      _place = widget.initialPlace;
+      _ready = true;
+      _load(silentRefresh: true);
+    } else {
+      _load();
+    }
   }
 
   Future<void> _openEdit() async {
@@ -44,7 +58,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     setState(() => _place = updated);
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool silentRefresh = false}) async {
     try {
       final api = await ApiClient.create();
       final repo = PlacesRepository(api);
@@ -53,10 +67,11 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       if (!mounted) return;
       setState(() {
         _place = place;
-        _ready = true;
+        if (!silentRefresh) _ready = true;
       });
     } catch (e) {
       if (!mounted) return;
+      if (silentRefresh) return;
       setState(() {
         _error = e.toString();
         _ready = true;
@@ -70,10 +85,13 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     final back = BottomAction.back().copyWith(
       onTap: (ctx) => Navigator.of(ctx).pop(_wasEdited),
     );
+    // Disable editing while the place is pending sync (local ID not yet resolved).
+    final isPending = _place?.id.startsWith('local_') ?? false;
     final edit = BottomAction.primary(
       id: 'edit',
       icon: Icons.edit_rounded,
-      onTap: (_) => _openEdit(),
+      enabled: !isPending,
+      onTap: isPending ? (_) {} : (_) => _openEdit(),
     );
 
     if (!_ready) {
@@ -133,9 +151,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
     final place = _place!;
 
-    final ratingStr = place.avgRating != null
-        ? place.avgRating!.toStringAsFixed(1)
-        : null;
+    final ratingStr = place.avgRating?.toStringAsFixed(1);
 
     final priceStr = place.avgPricePp != null
         ? '${place.avgPricePp!.toStringAsFixed(2)} €'
@@ -209,16 +225,21 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
             const SizedBox(height: 24),
 
             // ── Acciones ─────────────────────────────────────────────────
-            _VisitsButton(onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => PlaceVisitsScreen(
-                    placeId: place.id,
-                    placeName: place.name,
+            // Visits are not accessible while the place is pending sync:
+            // using a local ID as a Visit FK would fail on the backend.
+            if (!isPending)
+              _VisitsButton(onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => PlaceVisitsScreen(
+                      placeId: place.id,
+                      placeName: place.name,
+                      placeTypeId: place.placeTypeId,
+                      db: widget.db,
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              }),
           ],
         ),
       ),

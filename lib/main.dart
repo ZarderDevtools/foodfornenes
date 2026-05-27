@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import 'local/app_database.dart';
 import 'services/api_client.dart';
+import 'services/global_sync_service.dart';
+import 'services/pending_sync_service.dart';
 import 'repositories/auth_repository.dart';
 import 'screens/startup_screen.dart';
 import 'screens/login_screen.dart';
@@ -17,6 +19,8 @@ Future<void> main() async {
   final apiClient = await ApiClient.create();
   final authRepository = AuthRepository(apiClient);
   final db = AppDatabase();
+  final pendingSyncService = PendingSyncService(api: apiClient, db: db);
+  final syncService = GlobalSyncService(api: apiClient, db: db, pendingSync: pendingSyncService);
 
   // Redirigir a login si cualquier llamada API devuelve 401 irrecuperable
   apiClient.onSessionExpired.listen((_) {
@@ -30,6 +34,7 @@ Future<void> main() async {
     apiClient: apiClient,
     authRepository: authRepository,
     db: db,
+    syncService: syncService,
   ));
 }
 
@@ -37,12 +42,14 @@ class MyApp extends StatelessWidget {
   final ApiClient apiClient;
   final AuthRepository authRepository;
   final AppDatabase db;
+  final GlobalSyncService syncService;
 
   const MyApp({
     super.key,
     required this.apiClient,
     required this.authRepository,
     required this.db,
+    required this.syncService,
   });
 
   @override
@@ -69,6 +76,7 @@ class MyApp extends StatelessWidget {
               apiClient: apiClient,
               authRepository: authRepository,
               db: db,
+              syncService: syncService,
             ),
       },
     );

@@ -103,8 +103,9 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
   void initState() {
     super.initState();
     final seeded = widget.initialItems;
-    if (seeded != null && seeded.isNotEmpty) {
-      // Show cached data immediately, then refresh from API without spinner
+    if (seeded != null) {
+      // initialItems != null means the parent computed local data (may be empty).
+      // Show it immediately and refresh from API in background without a spinner.
       _items = seeded;
       _loading = false;
       _load();
@@ -134,8 +135,17 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
         }
       });
 
-      // 2) Recarga
-      _load(initial: true);
+      // 2) Si el padre provee datos locales ya filtrados, mostrarlos inmediatamente
+      //    y refrescar desde la API en background sin spinner.
+      //    newSeeds != null (incluso vacío) = datos locales computados, background refresh.
+      //    newSeeds == null = sin datos locales, carga inicial con spinner.
+      final newSeeds = widget.initialItems;
+      if (newSeeds != null) {
+        setState(() => _items = newSeeds);
+        _load();
+      } else {
+        _load(initial: true);
+      }
     }
   }
 
@@ -171,10 +181,7 @@ class _ListScreenState<T> extends State<ListScreen<T>> {
       }
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        // If cached items are showing, suppress the error silently
-        if (_items.isEmpty) _error = e.toString();
-      });
+      setState(() {});
     } finally {
       if (!mounted) return;
       setState(() {

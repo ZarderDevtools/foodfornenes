@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../models/bottom_action.dart';
 import '../../models/food_visit.dart';
 import '../../repositories/visits_repository.dart';
@@ -12,11 +13,13 @@ import 'add_food_visit/add_food_visit_flow.dart';
 class FoodVisitsScreen extends StatefulWidget {
   final String foodId;
   final String foodName;
+  final AppDatabase db;
 
   const FoodVisitsScreen({
     super.key,
     required this.foodId,
     required this.foodName,
+    required this.db,
   });
 
   @override
@@ -30,8 +33,10 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
   bool _loadingMore = false;
   bool _hasMore = false;
   int _page = 1;
+  bool _offlineEmpty = false;
 
   VisitsRepository? _repo;
+  Map<String, String> _placeNameByVisitId = {};
 
   @override
   void initState() {
@@ -42,8 +47,38 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
   Future<void> _init() async {
     try {
       final api = await ApiClient.create();
-      _repo = VisitsRepository(api);
-      await _loadPage(1);
+      final repo = VisitsRepository(
+        api,
+        foodVisitsDao: widget.db.foodVisitsDao,
+      );
+      _repo = repo;
+
+      final cached = await repo.getCachedFoodVisits(widget.foodId);
+
+      if (cached != null && cached.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _visits = cached;
+          _hasMore = false;
+          _ready = true;
+        });
+        _hydrateNames();
+        // Refresh from API in background; ignore failures silently.
+        try {
+          await _loadPage(1);
+        } catch (_) {}
+      } else {
+        // No local data: try API; on failure show friendly empty state.
+        try {
+          await _loadPage(1);
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _ready = true;
+            _offlineEmpty = true;
+          });
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -59,10 +94,19 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
 
     final result = await repo.fetchFoodVisits(widget.foodId, page: page);
 
+    // For page 1, prepend pending local records not yet on the server.
+    List<FoodVisit> pending = const [];
+    if (page == 1) {
+      pending = await repo.getPendingFoodVisits(widget.foodId);
+    }
+
     if (!mounted) return;
     setState(() {
       if (page == 1) {
-        _visits = result.results;
+        final serverIds = result.results.map((v) => v.id).toSet();
+        final uniquePending =
+            pending.where((p) => !serverIds.contains(p.id)).toList();
+        _visits = [...uniquePending, ...result.results];
       } else {
         _visits = [..._visits, ...result.results];
       }
@@ -71,12 +115,51 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
       _ready = true;
       _loadingMore = false;
     });
+    _hydrateNames();
+  }
+
+  // Resolves place names for FoodVisits where placeName is null/empty,
+  // using VisitsCache → PlacesCache lookups. Runs in the background and
+  // updates _placeNameByVisitId incrementally.
+  Future<void> _hydrateNames() async {
+    final ids = _visits
+        .where((v) => v.placeName == null || v.placeName!.isEmpty)
+        .map((v) => v.visitId)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return;
+
+    final cachedVisits = await widget.db.visitsDao.getVisitsByIds(ids);
+    final placeIdByVisitId = {for (final v in cachedVisits) v.id: v.placeId};
+
+    final placeIds = placeIdByVisitId.values.toSet().toList();
+    if (placeIds.isEmpty) return;
+
+    final places = await widget.db.placesDao.getPlacesByIds(placeIds);
+    final nameByPlaceId = {for (final p in places) p.id: p.name};
+
+    final resolved = <String, String>{};
+    for (final visitId in ids) {
+      final placeId = placeIdByVisitId[visitId];
+      if (placeId == null) continue;
+      final name = nameByPlaceId[placeId];
+      if (name != null && name.isNotEmpty) resolved[visitId] = name;
+    }
+
+    if (!mounted || resolved.isEmpty) return;
+    setState(() {
+      _placeNameByVisitId = {..._placeNameByVisitId, ...resolved};
+    });
   }
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
-    await _loadPage(_page + 1);
+    try {
+      await _loadPage(_page + 1);
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
 
   Future<void> _openAddVisit() async {
@@ -85,6 +168,7 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
         builder: (_) => AddFoodVisitFlow(
           foodId: widget.foodId,
           foodName: widget.foodName,
+          db: widget.db,
         ),
       ),
     );
@@ -95,6 +179,8 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
       _hasMore = false;
       _page = 1;
       _error = null;
+      _offlineEmpty = false;
+      _placeNameByVisitId = {};
     });
     await _init();
   }
@@ -172,16 +258,23 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
     }
 
     if (_visits.isEmpty) {
+      final emptyMessage = _offlineEmpty
+          ? 'No hay visitas guardadas todavía.\nCuando se sincronice la app, aparecerán aquí.'
+          : 'No hay visitas registradas.';
       return AppScaffold(
         title: widget.foodName,
         floatingBar: false,
         left: home,
         center: add,
         right: back,
-        child: const Center(
-          child: Text(
-            'No hay visitas registradas.',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              emptyMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
+            ),
           ),
         ),
       );
@@ -219,6 +312,7 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
             return _FoodVisitCard(
               visit: visit,
               formattedDate: _formatDate(visit.date),
+              resolvedPlaceName: _placeNameByVisitId[visit.visitId],
             );
           },
         ),
@@ -230,8 +324,13 @@ class _FoodVisitsScreenState extends State<FoodVisitsScreen> {
 class _FoodVisitCard extends StatelessWidget {
   final FoodVisit visit;
   final String formattedDate;
+  final String? resolvedPlaceName;
 
-  const _FoodVisitCard({required this.visit, required this.formattedDate});
+  const _FoodVisitCard({
+    required this.visit,
+    required this.formattedDate,
+    this.resolvedPlaceName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -248,15 +347,24 @@ class _FoodVisitCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Sitio (si disponible) ──────────────────────────────────────
-          if (visit.placeName != null && visit.placeName!.isNotEmpty) ...[
-            Text(
-              visit.placeName!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-          ],
+          Builder(builder: (_) {
+            final name = (visit.placeName != null && visit.placeName!.isNotEmpty)
+                ? visit.placeName!
+                : (resolvedPlaceName?.isNotEmpty == true ? resolvedPlaceName : null);
+            if (name == null) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+            );
+          }),
 
           // ── Rating · Precio · Fecha ────────────────────────────────────
           Row(

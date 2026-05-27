@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../local/app_database.dart';
 import '../../models/place.dart';
 import '../../models/place_list_query.dart';
 import '../../repositories/categorization_repository.dart';
@@ -26,11 +27,16 @@ class PlacesListScreen extends StatefulWidget {
   /// ordering (DRF) e.g. "-avg_rating"
   final String? ordering;
 
+  final ApiClient apiClient;
+  final AppDatabase db;
+
   const PlacesListScreen({
     super.key,
     required this.placeTypeId,
     required this.title,
     this.ordering,
+    required this.apiClient,
+    required this.db,
   });
 
   @override
@@ -39,11 +45,15 @@ class PlacesListScreen extends StatefulWidget {
 
 class _PlacesListScreenState extends State<PlacesListScreen> {
   PlacesService? _service;
+  PlacesRepository? _repo;
   CategorizationRepository? _catRepo;
   late PlaceListQuery _query;
 
   bool _ready = false;
   String? _initError;
+  List<Place> _allCached = const [];
+  List<Place>? _cachedItems;
+  Map<String, String> _tagIdToName = const {};
 
   @override
   void initState() {
@@ -58,15 +68,26 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
 
   Future<void> _init() async {
     try {
-      final api = await ApiClient.create();
-      final repo = PlacesRepository(api);
+      final repo = PlacesRepository(widget.apiClient, dao: widget.db.placesDao);
       final service = PlacesService(repo);
-      final catRepo = CategorizationRepository(api);
+      final catRepo = CategorizationRepository(
+        widget.apiClient,
+        areasDao: widget.db.areasDao,
+        tagsDao: widget.db.tagsDao,
+      );
+
+      final cached = await repo.getCachedPlaces();
+      _allCached = cached ?? const [];
+      final filtered = _applyLocalFilter(_allCached, _query);
 
       if (!mounted) return;
       setState(() {
         _service = service;
+        _repo = repo;
         _catRepo = catRepo;
+        // null = no cache at all → ListScreen muestra spinner inicial.
+        // [] = hay caché pero el filtro devuelve vacío → ListScreen muestra estado vacío + refresh silencioso.
+        _cachedItems = _allCached.isNotEmpty ? filtered : null;
         _ready = true;
       });
     } catch (e) {
@@ -76,6 +97,82 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
         _ready = true;
       });
     }
+  }
+
+  List<Place> _applyLocalFilter(List<Place> all, PlaceListQuery q) {
+    var result = all.where((p) {
+      if (q.placeTypeId != null && p.placeTypeId != q.placeTypeId) return false;
+      final search = q.search?.trim().toLowerCase();
+      if (search != null && search.isNotEmpty && !p.name.toLowerCase().contains(search)) {
+        return false;
+      }
+      final minRating = q.minAvgRating;
+      if (minRating != null) {
+        final r = p.avgRating;
+        if (r == null || r < minRating) return false;
+      }
+      final maxPrice = q.maxAvgPricePp;
+      if (maxPrice != null) {
+        final pr = p.avgPricePp;
+        if (pr == null || pr > maxPrice) return false;
+      }
+      final areas = q.areasIn;
+      if (areas != null && areas.isNotEmpty) {
+        if (p.areaId == null || !areas.contains(p.areaId)) return false;
+      }
+      final selectedTagIds = q.tagsIn;
+      if (selectedTagIds != null && selectedTagIds.isNotEmpty) {
+        final resolvedNames = selectedTagIds
+            .map((id) => _tagIdToName[id])
+            .whereType<String>()
+            .toSet();
+        // OR: place must have at least one selected tag name.
+        // If no IDs resolve (cache incomplete), skip filter to avoid over-filtering.
+        if (resolvedNames.isNotEmpty) {
+          if (!p.tags.any((name) => resolvedNames.contains(name))) return false;
+        }
+      }
+      return true;
+    }).toList();
+
+    final ordering = q.ordering;
+    if (ordering != null && ordering.trim().isNotEmpty) {
+      final desc = ordering.startsWith('-');
+      final field = desc ? ordering.substring(1) : ordering;
+      result.sort((a, b) {
+        int cmp;
+        switch (field) {
+          case 'name':
+            cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          case 'avg_rating':
+            final ra = a.avgRating;
+            final rb = b.avgRating;
+            if (ra == null && rb == null) { cmp = 0; }
+            else if (ra == null) { return 1; }
+            else if (rb == null) { return -1; }
+            else { cmp = ra.compareTo(rb); }
+          case 'last_visit_at':
+            final la = a.lastVisitAt;
+            final lb = b.lastVisitAt;
+            if (la == null && lb == null) { cmp = 0; }
+            else if (la == null) { return 1; }
+            else if (lb == null) { return -1; }
+            else { cmp = la.compareTo(lb); }
+          case 'avg_price_pp':
+            final pa = a.avgPricePp;
+            final pb = b.avgPricePp;
+            if (pa == null && pb == null) { cmp = 0; }
+            else if (pa == null) { return 1; }
+            else if (pb == null) { return -1; }
+            else { cmp = pa.compareTo(pb); }
+          default:
+            cmp = 0;
+        }
+        return desc ? -cmp : cmp;
+      });
+    }
+
+    return result;
   }
 
   bool get _hasActiveFilters {
@@ -90,26 +187,75 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
     return hasSearch || hasMinRating || hasMaxPrice || hasTags || hasAreas;
   }
 
+  Future<void> _refreshCatalogCache() async {
+    final catRepo = _catRepo;
+    if (catRepo == null) return;
+    try {
+      await Future.wait([
+        catRepo.listAreas(ordering: 'name', page: 1),
+        catRepo.listTags(ordering: 'name', page: 1),
+      ]);
+    } catch (_) {}
+  }
+
+  /// Refresca [_allCached] desde la BD local para incluir sitios que la API
+  /// haya descargado y cacheado después del arranque de la pantalla.
+  Future<void> _refreshLocalCache() async {
+    final repo = _repo;
+    if (repo == null) return;
+    try {
+      final fresh = await repo.getCachedPlaces();
+      if (fresh != null) _allCached = fresh;
+    } catch (_) {}
+  }
+
   Future<void> _openFilters() async {
-    // Cargamos tags y áreas antes de abrir los filtros
+    // Refrescar caché de sitios para que el filtro local vea los datos que la
+    // API haya descargado desde que se abrió la pantalla.
+    await _refreshLocalCache();
+
     List<FilterOption> tagOptions = const [];
     List<FilterOption> areaOptions = const [];
     final catRepo = _catRepo;
     if (catRepo != null) {
-      try {
-        final results = await Future.wait([
-          catRepo.listTags(ordering: 'name', page: 1),
-          catRepo.listAreas(ordering: 'name', page: 1),
-        ]);
-        tagOptions = (results[0] as List)
-            .map((t) => FilterOption(value: t.id, label: t.name))
-            .toList();
-        areaOptions = (results[1] as List)
+      // 1. Carga desde caché local (rápido, sin red)
+      final cachedAreas = await catRepo.getCachedAreas();
+      final cachedTags = await catRepo.getCachedTags();
+      if (cachedAreas != null) {
+        areaOptions = cachedAreas
             .map((a) => FilterOption(value: a.id, label: a.name))
             .toList();
-      } catch (_) {
-        // Si falla la carga, los filtros dinámicos simplemente no se muestran
       }
+      if (cachedTags != null) {
+        tagOptions = cachedTags
+            .map((t) => FilterOption(value: t.id, label: t.name))
+            .toList();
+      }
+
+      if (areaOptions.isEmpty && tagOptions.isEmpty) {
+        // 2. Sin caché: intenta API de forma bloqueante (primera vez)
+        try {
+          final results = await Future.wait([
+            catRepo.listTags(ordering: 'name', page: 1),
+            catRepo.listAreas(ordering: 'name', page: 1),
+          ]);
+          tagOptions = (results[0] as List)
+              .map((t) => FilterOption(value: t.id, label: t.name))
+              .toList();
+          areaOptions = (results[1] as List)
+              .map((a) => FilterOption(value: a.id, label: a.name))
+              .toList();
+        } catch (_) {
+          // Si falla la carga, los filtros dinámicos simplemente no se muestran
+        }
+      } else {
+        // 3. Hay caché: refresca en background para la próxima vez
+        _refreshCatalogCache();
+      }
+    }
+
+    if (tagOptions.isNotEmpty) {
+      _tagIdToName = {for (final opt in tagOptions) opt.value: opt.label};
     }
 
     final filters = <FilterDefinition<PlaceListQuery>>[
@@ -196,10 +342,14 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
 
     setState(() {
       _query = result.copyWith(page: 1);
+      _cachedItems = _applyLocalFilter(_allCached, _query);
     });
   }
 
   Future<void> _openSort() async {
+    await _refreshLocalCache();
+    if (!mounted) return;
+
     final result = await Navigator.push<SortResult>(
       context,
       MaterialPageRoute(
@@ -221,39 +371,38 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
 
     setState(() {
       _query = _query.copyWith(ordering: result.ordering);
+      _cachedItems = _applyLocalFilter(_allCached, _query);
     });
-    final service = _service;
-    if (service == null) return;
-    await service.loadFirstPage(_query);
   }
 
   Future<void> _openAddPlace() async {
     final created = await Navigator.of(context).push<Place>(
       MaterialPageRoute(
         builder: (_) => AddPlaceFlow(
-          // ✅ dejamos preseleccionado el tipo del listado actual
+          api: widget.apiClient,
+          db: widget.db,
           defaultPlaceTypeId: widget.placeTypeId,
           defaultPlaceTypeLabel: widget.title,
         ),
       ),
     );
 
-    if (created == null) return;
+    if (!mounted || created == null) return;
 
-    // ✅ recargar listado para que aparezca el nuevo sitio
-    final service = _service;
-    if (service == null) return;
-
-    setState(() {
-      _query = _query.copyWith(page: 1);
-    });
-
-    await service.loadFirstPage(_query);
-
+    // Reload from local cache so the new place (online or pending) appears
+    // immediately. ListScreen will do a background API refresh via didUpdateWidget.
+    final fresh = await _repo?.getCachedPlaces();
     if (!mounted) return;
 
+    _allCached = fresh ?? const [];
+    setState(() {
+      _query = _query.copyWith(page: 1);
+      _cachedItems = _applyLocalFilter(_allCached, _query);
+    });
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Sitio creado: ${created.name}')),
+      SnackBar(content: Text('Sitio guardado: ${created.name}')),
     );
   }
 
@@ -310,6 +459,7 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
 
     return ListScreen<Place>(
       title: widget.title,
+      initialItems: _cachedItems,
 
       fetchFirstPage: () => service.loadFirstPage(_query),
       fetchNextPage: () => service.loadNextPage(),
@@ -323,7 +473,7 @@ class _PlacesListScreenState extends State<PlacesListScreen> {
       onTapItem: (p) {
         Navigator.of(context).push<bool>(
           MaterialPageRoute(
-            builder: (_) => PlaceDetailScreen(placeId: p.id),
+            builder: (_) => PlaceDetailScreen(placeId: p.id, initialPlace: p, db: widget.db),
           ),
         ).then((wasEdited) {
           if (wasEdited == true && mounted) {
