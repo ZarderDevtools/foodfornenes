@@ -444,6 +444,23 @@ class _AddVisitFlowState extends State<AddVisitFlow> {
           if (commentTrimmed.isNotEmpty) 'comment': commentTrimmed,
         };
 
+        // If the selected Place is still local (pending sync), skip the API POST:
+        // the backend would reject a non-UUID place ID with a 400.
+        // Save directly as a pending_create so PendingSyncService can send it
+        // after the Place has been synced and its ID resolved.
+        if (placeId != null && placeId.startsWith('local_')) {
+          await _saveLocalPending(
+            placeId: placeId,
+            date: date,
+            rating: rating,
+            pricePp: pricePp,
+            comment: commentTrimmed,
+            payload: payload,
+          );
+          if (context.mounted) Navigator.of(context).pop(true);
+          return;
+        }
+
         try {
           final res = await api.post('/api/v1/visits/', data: payload);
           final responseData = res.data;

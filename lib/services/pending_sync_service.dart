@@ -81,6 +81,28 @@ class PendingSyncService {
           await _db.placesDao.deletePlaceById(entry.localEntityId);
           await _db.placesDao.upsertPlace(_placeToCompanion(place));
           await _db.syncQueueDao.deleteEntry(entry.id);
+
+          // Atomically repoint any pending Visits that reference this local Place ID.
+          // If the process dies here the whole transaction rolls back, leaving the
+          // Place entry still in SyncQueue as pending — safe to retry next sync.
+          await _db.visitsDao.updatePlaceId(entry.localEntityId, place.id);
+
+          final pendingVisitEntries =
+              await _db.syncQueueDao.getPendingCreates('visit');
+          for (final visitEntry in pendingVisitEntries) {
+            try {
+              final vPayload =
+                  jsonDecode(visitEntry.payloadJson) as Map<String, dynamic>;
+              if (vPayload['place'] == entry.localEntityId) {
+                final updated = Map<String, dynamic>.from(vPayload)
+                  ..['place'] = place.id;
+                await _db.syncQueueDao
+                    .updatePayload(visitEntry.id, jsonEncode(updated));
+              }
+            } catch (_) {
+              // Malformed payload: skip, leave entry as-is.
+            }
+          }
         });
       } on ApiException catch (e) {
         final code = e.statusCode;

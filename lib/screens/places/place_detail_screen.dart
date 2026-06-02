@@ -59,6 +59,9 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   }
 
   Future<void> _load({bool silentRefresh = false}) async {
+    // Local-only places don't exist on the backend yet; skip the API call.
+    if (widget.placeId.startsWith('local_')) return;
+
     try {
       final api = await ApiClient.create();
       final repo = PlacesRepository(api);
@@ -225,10 +228,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
             const SizedBox(height: 24),
 
             // ── Acciones ─────────────────────────────────────────────────
-            // Visits are not accessible while the place is pending sync:
-            // using a local ID as a Visit FK would fail on the backend.
-            if (!isPending)
-              _VisitsButton(onTap: () {
+            _VisitsButton(onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => PlaceVisitsScreen(

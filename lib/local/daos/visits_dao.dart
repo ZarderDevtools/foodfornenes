@@ -64,4 +64,8 @@ class VisitsDao extends DatabaseAccessor<AppDatabase> with _$VisitsDaoMixin {
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
             ..limit(1))
           .getSingleOrNull();
+
+  Future<void> updatePlaceId(String oldPlaceId, String newPlaceId) =>
+      (update(visitsCache)..where((t) => t.placeId.equals(oldPlaceId)))
+          .write(VisitsCacheCompanion(placeId: Value(newPlaceId)));
 }
