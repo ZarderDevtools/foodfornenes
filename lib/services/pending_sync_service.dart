@@ -46,6 +46,31 @@ class PendingSyncService {
           await _db.foodsDao.deleteFoodById(entry.localEntityId);
           await _db.foodsDao.upsertFood(_foodToCompanion(food));
           await _db.syncQueueDao.deleteEntry(entry.id);
+
+          // Repoint any pending FoodVisits that reference this local Food ID.
+          await _db.foodVisitsDao.updateFoodId(entry.localEntityId, food.id);
+
+          final pendingFoodVisitEntries =
+              await _db.syncQueueDao.getPendingCreates('food_visit');
+          for (final fvEntry in pendingFoodVisitEntries) {
+            try {
+              final composite =
+                  jsonDecode(fvEntry.payloadJson) as Map<String, dynamic>;
+              final fvPayload =
+                  composite['foodVisitPayload'] as Map<String, dynamic>?;
+              if (fvPayload != null &&
+                  fvPayload['food'] == entry.localEntityId) {
+                final updatedComposite = Map<String, dynamic>.from(composite)
+                  ..['foodVisitPayload'] =
+                      (Map<String, dynamic>.from(fvPayload)
+                        ..['food'] = food.id);
+                await _db.syncQueueDao
+                    .updatePayload(fvEntry.id, jsonEncode(updatedComposite));
+              }
+            } catch (_) {
+              // Malformed payload: skip, leave entry as-is.
+            }
+          }
         });
       } on ApiException catch (e) {
         final code = e.statusCode;
@@ -98,6 +123,28 @@ class PendingSyncService {
                   ..['place'] = place.id;
                 await _db.syncQueueDao
                     .updatePayload(visitEntry.id, jsonEncode(updated));
+              }
+            } catch (_) {
+              // Malformed payload: skip, leave entry as-is.
+            }
+          }
+
+          // Also update visitPayload['place'] embedded in pending food_visit entries.
+          final pendingFoodVisitEntries =
+              await _db.syncQueueDao.getPendingCreates('food_visit');
+          for (final fvEntry in pendingFoodVisitEntries) {
+            try {
+              final composite =
+                  jsonDecode(fvEntry.payloadJson) as Map<String, dynamic>;
+              final vPayload =
+                  composite['visitPayload'] as Map<String, dynamic>?;
+              if (vPayload != null &&
+                  vPayload['place'] == entry.localEntityId) {
+                final updatedComposite = Map<String, dynamic>.from(composite)
+                  ..['visitPayload'] = (Map<String, dynamic>.from(vPayload)
+                    ..['place'] = place.id);
+                await _db.syncQueueDao
+                    .updatePayload(fvEntry.id, jsonEncode(updatedComposite));
               }
             } catch (_) {
               // Malformed payload: skip, leave entry as-is.
@@ -180,6 +227,16 @@ class PendingSyncService {
       (composite['foodVisitPayload'] as Map<String, dynamic>?) ?? {},
     );
     String? backendVisitId = composite['backendVisitId'] as String?;
+
+    // Defer if a parent entity hasn't synced yet (local ID still in payload).
+    // Sending a local_ ID to the backend causes an avoidable 4xx that would be
+    // treated as definitive and permanently fail this entry.
+    final foodId = (foodVisitPayload['food'] as String?) ?? '';
+    final placeId = (visitPayload['place'] as String?) ?? '';
+    if (foodId.startsWith('local_') ||
+        (backendVisitId == null && placeId.startsWith('local_'))) {
+      return;
+    }
 
     try {
       // Step 1: Create Visit on backend if not already done.

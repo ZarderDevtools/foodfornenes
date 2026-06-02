@@ -469,6 +469,26 @@ class _AddFoodVisitFlowState extends State<AddFoodVisitFlow> {
           if (commentTrimmed.isNotEmpty) 'comment': commentTrimmed,
         };
 
+        // If the Food is still local (pending sync), posting its local ID to
+        // the backend would produce a 4xx (invalid UUID). Save offline directly.
+        if (widget.foodId.startsWith('local_')) {
+          if (placeId != null) {
+            await _saveLocalPending(
+              placeId: placeId,
+              placeName: placeName,
+              date: date,
+              rating: rating,
+              pricePaid: pricePaid,
+              comment: commentTrimmed,
+              visitPayload: visitPayload,
+              foodVisitPayload: foodVisitPayload,
+              backendVisitId: null,
+            );
+          }
+          if (context.mounted) Navigator.of(context).pop(true);
+          return;
+        }
+
         // ── Step 0: Resolve the Visit to link ────────────────────────────────
         // If the Place already has a Visit, reuse it instead of creating a new one.
         String? existingVisitId;

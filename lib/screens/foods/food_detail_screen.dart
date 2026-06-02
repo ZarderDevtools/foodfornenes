@@ -172,20 +172,17 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
             const SizedBox(height: 24),
 
             // ── Acciones ─────────────────────────────────────────────────
-            // Visits are not accessible while the food is pending sync:
-            // using a local ID as a FoodVisit FK would fail on the backend.
-            if (!isPending)
-              _VisitsButton(onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => FoodVisitsScreen(
-                      foodId: food.id,
-                      foodName: food.name,
-                      db: widget.db,
-                    ),
+            _VisitsButton(onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => FoodVisitsScreen(
+                    foodId: food.id,
+                    foodName: food.name,
+                    db: widget.db,
                   ),
-                );
-              }),
+                ),
+              );
+            }),
           ],
         ),
       ),

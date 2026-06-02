@@ -36,4 +36,8 @@ class FoodVisitsDao extends DatabaseAccessor<AppDatabase>
   Future<void> updateSyncStatus(String id, String status) =>
       (update(foodVisitsCache)..where((t) => t.id.equals(id)))
           .write(FoodVisitsCacheCompanion(syncStatus: Value(status)));
+
+  Future<void> updateFoodId(String oldFoodId, String newFoodId) =>
+      (update(foodVisitsCache)..where((t) => t.foodId.equals(oldFoodId)))
+          .write(FoodVisitsCacheCompanion(foodId: Value(newFoodId)));
 }
