@@ -115,6 +115,47 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Column(
                 children: [
+                  // ── Gear button (top-left) ─────────────────────────────
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        popupMenuTheme: PopupMenuThemeData(
+                          color: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            side: const BorderSide(
+                              color: Color(0xFFBFE6E3),
+                              width: 1.0,
+                            ),
+                          ),
+                          elevation: 4,
+                          textStyle: const TextStyle(
+                            color: Color(0xFF2BB7A9),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      child: PopupMenuButton<String>(
+                        icon: const Icon(
+                          Icons.settings_rounded,
+                          size: 22,
+                          color: Color(0xFF2BB7A9),
+                        ),
+                        tooltip: 'Ajustes',
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'sync_status',
+                            child: Text('Estado de sincronización'),
+                          ),
+                        ],
+                        onSelected: (_) {
+                          // placeholder — próximo paso: mostrar estado de sync
+                        },
+                      ),
+                    ),
+                  ),
                   if (kDebugMode) ...[
                     ElevatedButton.icon(
                       onPressed: _debugSyncing
