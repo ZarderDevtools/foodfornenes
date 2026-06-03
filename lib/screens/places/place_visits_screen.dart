@@ -71,7 +71,9 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
               final apiIds = _visits.map((v) => v.id).toSet();
               final toAdd =
                   pending.where((v) => !apiIds.contains(v.id)).toList();
-              if (toAdd.isNotEmpty) _visits = [...toAdd, ..._visits];
+              if (toAdd.isNotEmpty) {
+                _visits = _sortedByDate([...toAdd, ..._visits]);
+              }
             });
           }
         } catch (_) {}
@@ -96,6 +98,9 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
     }
   }
 
+  List<Visit> _sortedByDate(List<Visit> list) =>
+      [...list]..sort((a, b) => b.date.compareTo(a.date));
+
   Future<void> _loadPage(int page) async {
     final repo = _repo;
     if (repo == null) return;
@@ -105,9 +110,9 @@ class _PlaceVisitsScreenState extends State<PlaceVisitsScreen> {
     if (!mounted) return;
     setState(() {
       if (page == 1) {
-        _visits = result.results;
+        _visits = _sortedByDate(result.results);
       } else {
-        _visits = [..._visits, ...result.results];
+        _visits = _sortedByDate([..._visits, ...result.results]);
       }
       _hasMore = result.next != null;
       _page = page;

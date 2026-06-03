@@ -9,7 +9,10 @@ class VisitsDao extends DatabaseAccessor<AppDatabase> with _$VisitsDaoMixin {
   VisitsDao(super.db);
 
   Future<List<CachedVisit>> getVisitsByPlace(String placeId) =>
-      (select(visitsCache)..where((t) => t.placeId.equals(placeId))).get();
+      (select(visitsCache)
+            ..where((t) => t.placeId.equals(placeId))
+            ..orderBy([(t) => OrderingTerm.desc(t.date)]))
+          .get();
 
   Future<void> upsertVisits(List<VisitsCacheCompanion> rows) async {
     if (rows.isEmpty) return;
@@ -46,7 +49,8 @@ class VisitsDao extends DatabaseAccessor<AppDatabase> with _$VisitsDaoMixin {
               (t) =>
                   t.placeId.equals(placeId) &
                   t.syncStatus.equals('pending_create'),
-            ))
+            )
+            ..orderBy([(t) => OrderingTerm.desc(t.date)]))
           .get();
 
   Future<List<CachedVisit>> getVisitsByIds(List<String> ids) {
