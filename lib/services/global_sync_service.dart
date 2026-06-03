@@ -68,6 +68,33 @@ class GlobalSyncService {
     }
   }
 
+  Future<DateTime?> getLastSyncAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final str = prefs.getString(_lastSyncKey);
+    if (str == null) return null;
+    return DateTime.tryParse(str);
+  }
+
+  /// Returns true if the backend API is responding correctly.
+  /// Online:  2xx (success) or 401/403 (server up, auth/permission issue).
+  /// Offline: 5xx (server error), other 4xx, timeout, network failure.
+  Future<bool> checkConnectivity() async {
+    const path = '/api/v1/place-types/';
+    try {
+      await _api.get(path);
+      debugPrint('[Connectivity] GET $path → 2xx → Online');
+      return true;
+    } on ApiException catch (e) {
+      final code = e.statusCode;
+      final isOnline = code != null && (code == 401 || code == 403);
+      debugPrint('[Connectivity] GET $path → ${code ?? 'no response'} → ${isOnline ? 'Online' : 'Offline'}');
+      return isOnline;
+    } catch (e) {
+      debugPrint('[Connectivity] GET $path → error: $e → Offline');
+      return false;
+    }
+  }
+
   Future<bool> _shouldSync() async {
     final prefs = await SharedPreferences.getInstance();
     final lastStr = prefs.getString(_lastSyncKey);

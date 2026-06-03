@@ -57,4 +57,13 @@ class SyncQueueDao extends DatabaseAccessor<AppDatabase>
       (update(syncQueue)..where((t) => t.id.equals(id)))
           .write(SyncQueueCompanion(payloadJson: Value(newPayloadJson)));
 
+  Future<int> countPending() =>
+      (select(syncQueue)..where((t) => t.status.equals('pending')))
+          .get()
+          .then((list) => list.length);
+
+  Future<int> countFailed() =>
+      (select(syncQueue)..where((t) => t.status.equals('failed')))
+          .get()
+          .then((list) => list.length);
 }

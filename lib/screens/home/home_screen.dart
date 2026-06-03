@@ -150,8 +150,16 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Text('Estado de sincronización'),
                           ),
                         ],
-                        onSelected: (_) {
-                          // placeholder — próximo paso: mostrar estado de sync
+                        onSelected: (value) {
+                          if (value == 'sync_status') {
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => _SyncStatusDialog(
+                                db: widget.db,
+                                syncService: widget.syncService,
+                              ),
+                            );
+                          }
                         },
                       ),
                     ),
@@ -483,6 +491,212 @@ class _SmallButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Sync status dialog ────────────────────────────────────────────────────────
+
+class _SyncStatusDialog extends StatefulWidget {
+  final AppDatabase db;
+  final GlobalSyncService syncService;
+
+  const _SyncStatusDialog({required this.db, required this.syncService});
+
+  @override
+  State<_SyncStatusDialog> createState() => _SyncStatusDialogState();
+}
+
+class _SyncStatusDialogState extends State<_SyncStatusDialog> {
+  int _pending = 0;
+  int _failed = 0;
+  DateTime? _lastSync;
+  bool _loading = true;
+  bool _syncing = false;
+  bool? _serverOnline; // null = checking
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _checkConnectivity();
+  }
+
+  Future<void> _load() async {
+    final pending = await widget.db.syncQueueDao.countPending();
+    final failed = await widget.db.syncQueueDao.countFailed();
+    final lastSync = await widget.syncService.getLastSyncAt();
+    if (!mounted) return;
+    setState(() {
+      _pending = pending;
+      _failed = failed;
+      _lastSync = lastSync;
+      _loading = false;
+    });
+  }
+
+  Future<void> _checkConnectivity() async {
+    final online = await widget.syncService.checkConnectivity();
+    if (!mounted) return;
+    setState(() => _serverOnline = online);
+  }
+
+  Future<void> _sync() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    await widget.syncService.forceSync();
+    if (!mounted) return;
+    setState(() => _syncing = false);
+    _checkConnectivity();
+    await _load();
+  }
+
+  Widget _buildServerStatusTrailing() {
+    if (_serverOnline == null) {
+      return const SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          _serverOnline! ? 'Online' : 'Offline',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Icon(
+          _serverOnline! ? Icons.check_circle_rounded : Icons.cancel_rounded,
+          color: _serverOnline! ? Colors.green : Colors.red,
+          size: 18,
+        ),
+      ],
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString();
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$d/$m/$y $h:$min';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFBFE6E3), width: 1.0),
+      ),
+      backgroundColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: _loading
+            ? const SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Estado de sincronización',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2BB7A9),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _SyncRow(
+                    label: 'Servidor',
+                    trailing: _buildServerStatusTrailing(),
+                  ),
+                  const SizedBox(height: 8),
+                  _SyncRow(
+                    label: 'Última sync',
+                    value: _lastSync != null
+                        ? _formatDateTime(_lastSync!)
+                        : 'Nunca',
+                  ),
+                  const SizedBox(height: 8),
+                  _SyncRow(label: 'Pendientes', value: '$_pending'),
+                  const SizedBox(height: 8),
+                  _SyncRow(
+                    label: 'Fallidas',
+                    value: '$_failed',
+                    valueColor: _failed > 0 ? Colors.red[700] : null,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _syncing ? null : _sync,
+                      icon: _syncing
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.sync_rounded, size: 18),
+                      label: Text(_syncing ? 'Sincronizando…' : 'Sincronizar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2BB7A9),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _SyncRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final Widget? trailing;
+
+  const _SyncRow({
+    required this.label,
+    this.value = '',
+    this.valueColor,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 14, color: Colors.black87)),
+        trailing ??
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? Colors.black87,
+              ),
+            ),
+      ],
     );
   }
 }
