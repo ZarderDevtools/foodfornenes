@@ -174,6 +174,11 @@ class PendingSyncService {
       try {
         final payload = jsonDecode(entry.payloadJson) as Map<String, dynamic>;
 
+        // Defer if the Place hasn't synced yet — sending a local_ ID to the
+        // backend causes a 4xx that would permanently fail this entry.
+        final placeId = (payload['place'] as String?) ?? '';
+        if (placeId.startsWith('local_')) continue;
+
         final res = await _api.post('/api/v1/visits/', data: payload);
 
         final responseData = res.data;
